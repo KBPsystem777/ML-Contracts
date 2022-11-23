@@ -20,6 +20,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     event BaseURIUpdated(string _newURIAddress);
     event BurningRateUpdated(uint256 newTokenBurningRate);
     event StakingClaimed(uint256 tokenId);
+    event TokenBurned(address indexed burnFrom, uint256 amount);
 
     // Using temporary metadata from BAYC's IPFS metadatax
     string public baseURI =
@@ -146,6 +147,10 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         // Record new timestamp data to reset the staking rewards data
         _stakingRewards[tokenId] = uint64(block.timestamp);
 
+        emit StakingClaimed(tokenId);
+    }
+
+    function burnTokens(uint256 amount) external {
         // Burn a percentage of newly minted token
         uint256 amountToBurn = _lifeToken.balanceOf(msg.sender) *
             tokenBurningRate;
@@ -154,7 +159,8 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
             msg.sender,
             amountToBurn / 1000000000000000000
         );
-        emit StakingClaimed(tokenId);
+
+        emit TokenBurned(msg.sender, amount);
     }
 
     // @notice Function to transfer an NFT to from one investor to another address.
