@@ -940,8 +940,8 @@
       ]
     },
     "/Users/kpaunon/proj/web3/ML-Contracts/contracts/Life.sol": {
-      "lastModificationDate": 1669169530723,
-      "contentHash": "0a6cc37d10205bfeeaa1d978358694f1",
+      "lastModificationDate": 1669296991403,
+      "contentHash": "3266958abb099d34d1f542305135c08b",
       "sourceName": "contracts/Life.sol",
       "solcConfig": {
         "version": "0.8.13",
@@ -1135,7 +1135,7 @@
       ]
     },
     "/Users/kpaunon/proj/web3/ML-Contracts/contracts/ManageLife.sol": {
-      "lastModificationDate": 1669169530724,
+      "lastModificationDate": 1669297000673,
       "contentHash": "e4a5084df9f44ba9ff8a8eb1495c25a3",
       "sourceName": "contracts/ManageLife.sol",
       "solcConfig": {
@@ -1177,8 +1177,8 @@
       ]
     },
     "/Users/kpaunon/proj/web3/ML-Contracts/contracts/MLInvestorsNFT.sol": {
-      "lastModificationDate": 1669169530721,
-      "contentHash": "5da1b723582d63b85be56fb86597e403",
+      "lastModificationDate": 1669297023812,
+      "contentHash": "d2a06cf33b01c820fa3ec82e956bd496",
       "sourceName": "contracts/MLInvestorsNFT.sol",
       "solcConfig": {
         "version": "0.8.13",
@@ -1585,7 +1585,7 @@
       ]
     },
     "/Users/kpaunon/proj/web3/ML-Contracts/contracts/Marketplace.sol": {
-      "lastModificationDate": 1669169530726,
+      "lastModificationDate": 1669297009057,
       "contentHash": "205dfd5bfa720fc8de89b15a0cbb080d",
       "sourceName": "contracts/Marketplace.sol",
       "solcConfig": {

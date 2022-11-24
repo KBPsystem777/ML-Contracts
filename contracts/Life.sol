@@ -88,18 +88,6 @@ contract Life is ERC20, Ownable, Pausable {
             _manageLifeToken.lifeTokenIssuanceRate(tokenId);
     }
 
-    function batchClaimableStakingRewards(uint256[] memory tokenIds)
-        external
-        view
-        returns (uint256)
-    {
-        uint256 claimable = 0;
-        for (uint256 index; index < tokenIds.length; index++) {
-            claimable += claimableStakingRewards(tokenIds[index]);
-        }
-        return claimable;
-    }
-
     function burnLifeTokens(address from, uint256 amount) external {
         _burn(from, amount);
     }
@@ -146,21 +134,6 @@ contract Life is ERC20, Ownable, Pausable {
                 _manageLifeToken.ownerOf(tokenId),
                 claimableStakingRewards(tokenId)
             );
-
-            uint256 amountToBurn = claimableStakingRewards(tokenId) *
-                burningRate;
-
-            _burn(msg.sender, amountToBurn / 1000000000000000000);
-            startOfStakingRewards[tokenId] = uint64(block.timestamp);
-        }
-    }
-
-    function batchClaimStakingRewards(uint256[] memory tokenIds)
-        external
-        whenNotPaused
-    {
-        for (uint256 index; index < tokenIds.length; index++) {
-            claimStakingRewards(tokenIds[index]);
         }
     }
 
