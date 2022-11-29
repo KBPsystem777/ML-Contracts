@@ -14,6 +14,6 @@ LIFE Token: https://goerli.etherscan.io/address/0x37854ea8B86899BDEd2935f11Da99C
 
 NFT: https://goerli.etherscan.io/address/0x401Ec7c05f28875B6c41DE09724e4E7B884aADD0
 
-Marketplace: https://goerli.etherscan.io/address/0xB6f85159043dE03922f21b0102aDC91BA73ecA6F
+Marketplace: https://goerli.etherscan.io/address/0x2ab4bcaf034af4ec7aea9ded79bf8e33a6763421
 
 NFTi: https://goerli.etherscan.io/token/0x401ec7c05f28875b6c41de09724e4e7b884aadd0
