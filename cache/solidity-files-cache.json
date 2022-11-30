@@ -1135,8 +1135,8 @@
       ]
     },
     "/Users/kpaunon/proj/web3/ML-Contracts/contracts/ManageLife.sol": {
-      "lastModificationDate": 1669831222200,
-      "contentHash": "2fc37fd09e24933d108eba623cd51bd0",
+      "lastModificationDate": 1669832593826,
+      "contentHash": "df86bd5190e541df4464f165deec3465",
       "sourceName": "contracts/ManageLife.sol",
       "solcConfig": {
         "version": "0.8.17",

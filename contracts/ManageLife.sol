@@ -144,7 +144,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         }
         emit StakingIniatialized(tokenId);
 
-        _beforeTokenTransfer(from, to, tokenId);
+        super._beforeTokenTransfer(from, to, tokenId);
     }
 
     function _burn(
