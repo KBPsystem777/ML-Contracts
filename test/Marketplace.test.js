@@ -114,7 +114,7 @@ describe(" >>> ML Marketplace test Items >>>", function () {
     expect(updatedAdminPercent.toString()).to.not.be.null
     expect(updatedAdminPercent.toString()).to.not.undefined
   })
-  it("Should accept bids", async () => {
+  it("Should perform sale offerings", async () => {
     // Pre-mint the NFTs to be put into bid
     await nft.mint(ethers.utils.parseEther("1"), "1000000000000000000")
 
@@ -138,11 +138,68 @@ describe(" >>> ML Marketplace test Items >>>", function () {
     // Run tests
     // Making sure that the Offers struct will be updated with the new offer
     const offers = await market.offers(ethers.utils.parseEther("1"))
-
+    console.log(offers)
     // Making sure that offer #1 is forSale
     assert.equal(offers[0], true)
 
     // Making sure that the seller of offer #1 is correct
     assert.equal(offers[2], "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+  })
+
+  it("Should perform bid", async () => {
+    // Pre-mint the NFTs to be put into bid
+    await nft.mint(ethers.utils.parseEther("1017"), "1000000000000000000")
+
+    // Setting the trading to false to allow the admins to trade on behalf of the owner
+    await market.setTrading(false)
+
+    // Transfer the NFT to an address
+    // On success, NFT #12 will be created
+    await nft["safeTransferFrom(address,address,uint256)"](
+      await nft.owner(),
+      "0xD10E6200590067b1De5240795F762B43C8e4Cc08",
+      ethers.utils.parseEther("1017")
+    )
+
+    // Offer the NFT #12 for sale
+    await market.placeBid(ethers.utils.parseEther("1017"), {
+      value: ethers.utils.parseEther("0.002"),
+    })
+
+    // Submit mock bid for NFT #1
+    const bid = await market.bids(ethers.utils.parseEther("1017"))
+
+    // Run tests -- Making sure that the Bids struct will be updated with the new bid
+    // Making sure the bid variable contains the correct bidder address
+    assert.equal(bid[1], await market.owner())
+    expect(bid).to.contains(bid[1])
+  })
+
+  it("Should be able to change the trading status", async () => {
+    // Get the current trading status
+    // Should return false
+    const isAllowedTrading = await market.allowTrading()
+
+    // Change the trading status to true
+    await market.setTrading(true)
+
+    // Run tests to make sure trading status has been changed
+    assert.notEqual(isAllowedTrading, market.allowTrading())
+    assert.equal(await market.allowTrading(), true)
+  })
+
+  it("Should be able to change the ML Admin", async () => {
+    // Get the current market admin
+    const currentAdmin = await market.mlAdmin()
+
+    // Change the market admin
+    await market.setMLAdmin("0x1fcb2d8E0420fd4DA92979446AB247bbaA5a958a")
+
+    // Test to make sure market admin has been changed
+    assert.notEqual(currentAdmin, await market.mlAdmin())
+    assert.equal(
+      await market.mlAdmin(),
+      "0x1fcb2d8E0420fd4DA92979446AB247bbaA5a958a"
+    )
   })
 })

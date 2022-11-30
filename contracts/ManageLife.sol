@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
@@ -60,11 +60,9 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     // Returns the issuance rate for a specif NFT id
-    function lifeTokenIssuanceRate(uint256 tokenId)
-        external
-        view
-        returns (uint256)
-    {
+    function lifeTokenIssuanceRate(
+        uint256 tokenId
+    ) external view returns (uint256) {
         return _lifeTokenIssuanceRate[tokenId];
     }
 
@@ -82,10 +80,10 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         emit FullyPayed(tokenId);
     }
 
-    function mint(uint256 propertyId, uint256 lifeTokenIssuanceRate_)
-        external
-        onlyOwner
-    {
+    function mint(
+        uint256 propertyId,
+        uint256 lifeTokenIssuanceRate_
+    ) external onlyOwner {
         require(address(_lifeToken) != address(0), "Life token is not set");
         uint256 tokenId = propertyId;
         require(!_exists(tokenId), "Error: TokenId already minted");
@@ -144,23 +142,20 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
                 _lifeToken.claimStakingRewards(tokenId);
             }
         }
-        super._beforeTokenTransfer(from, to, tokenId);
         emit StakingIniatialized(tokenId);
+
+        _beforeTokenTransfer(from, to, tokenId);
     }
 
-    function _burn(uint256 tokenId)
-        internal
-        override(ERC721, ERC721URIStorage)
-    {
+    function _burn(
+        uint256 tokenId
+    ) internal override(ERC721, ERC721URIStorage) {
         super._burn(tokenId);
     }
 
-    function tokenURI(uint256 tokenId)
-        public
-        view
-        override(ERC721, ERC721URIStorage)
-        returns (string memory)
-    {
+    function tokenURI(
+        uint256 tokenId
+    ) public view override(ERC721, ERC721URIStorage) returns (string memory) {
         return super.tokenURI(tokenId);
     }
 
@@ -173,22 +168,17 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         uint256 tokenId,
         uint256 newLifeTokenIssuanceRate
     ) external onlyOwner {
-        // TODO: Fix and the issue on OnlyOwner on L178-179
-        if (_lifeToken.claimableStakingRewards(tokenId) > 1) {
-            _lifeToken.claimStakingRewards(tokenId);
-            _lifeToken.updateStartOfStaking(tokenId, 17444390400);
-            _lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
-            _lifeToken.updateStartOfStaking(tokenId, uint64(block.timestamp));
+        _lifeToken.claimStakingRewards(tokenId);
+        _lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
+        _lifeToken.updateStartOfStaking(tokenId, uint64(block.timestamp));
 
-            emit TokenIssuanceRateUpdated(tokenId, newLifeTokenIssuanceRate);
-        }
+        emit TokenIssuanceRateUpdated(tokenId, newLifeTokenIssuanceRate);
     }
 
     /// @notice Function to change the property custodian wallet address.
-    function updatePropertyCustodian(address _newPropertyCustodian)
-        external
-        onlyOwner
-    {
+    function updatePropertyCustodian(
+        address _newPropertyCustodian
+    ) external onlyOwner {
         PROPERTY_CUSTODIAN = _newPropertyCustodian;
         emit PropertyCustodianUpdated(_newPropertyCustodian);
     }

@@ -5,7 +5,7 @@ require("solidity-docgen")
 require("dotenv").config()
 
 module.exports = {
-  solidity: "0.8.13",
+  solidity: "0.8.17",
   docgen: {
     outputDir: "./docs/",
   },

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -18,7 +18,7 @@ contract Life is ERC20, Ownable, Pausable {
     uint256 public burningRate = 70000000000000000;
 
     constructor() ERC20("Life", "LIFE") {
-        _mint(msg.sender, 7000000 * 10**decimals());
+        _mint(msg.sender, 7000000 * 10 ** decimals());
     }
 
     // @notice Adding emergency security features: Pause smart contracts transactions
@@ -31,19 +31,15 @@ contract Life is ERC20, Ownable, Pausable {
     }
 
     // @dev IMPORTANT: Set the NFT contract after deployment
-    function setManageLifeToken(address manageLifeToken_)
-        external
-        onlyOwner
-        whenNotPaused
-    {
+    function setManageLifeToken(
+        address manageLifeToken_
+    ) external onlyOwner whenNotPaused {
         _manageLifeToken = ManageLife(manageLifeToken_);
     }
 
-    function setNftiToken(address investorsNft_)
-        external
-        onlyOwner
-        whenNotPaused
-    {
+    function setNftiToken(
+        address investorsNft_
+    ) external onlyOwner whenNotPaused {
         _investorsNft = ManageLifeInvestorsNFT(investorsNft_);
     }
 
@@ -69,20 +65,25 @@ contract Life is ERC20, Ownable, Pausable {
         startOfStakingRewards[tokenId] = uint64(block.timestamp);
     }
 
-    function updateStartOfStaking(uint256 tokenId, uint64 newStartDate)
-        external
-        onlyOwner
-    {
+    function updateStartOfStaking(
+        uint256 tokenId,
+        uint64 newStartDate
+    ) external {
+        require(
+            msg.sender == owner() || msg.sender == address(_manageLifeToken),
+            "Ony admins can execute this operation"
+        );
         startOfStakingRewards[tokenId] = newStartDate;
     }
 
     // @notice Check the claimable @LIFE token reward of an NFT
     // @param tokenId The tokenId of the NFT on which the staking reward will be claimed
-    function claimableStakingRewards(uint256 tokenId)
-        public
-        view
-        returns (uint256)
-    {
+    function claimableStakingRewards(
+        uint256 tokenId
+    ) public view returns (uint256) {
+        if (uint64(block.timestamp) < startOfStakingRewards[tokenId]) {
+            return 0;
+        }
         return
             (uint64(block.timestamp) - startOfStakingRewards[tokenId]) *
             _manageLifeToken.lifeTokenIssuanceRate(tokenId);
@@ -102,9 +103,10 @@ contract Life is ERC20, Ownable, Pausable {
     }
 
     // @notice Function for NFTi to claim their rewards. This function will be called once the investor claimed their staking rewards.
-    function mintInvestorsRewards(address investorAddress, uint256 _amount)
-        external
-    {
+    function mintInvestorsRewards(
+        address investorAddress,
+        uint256 _amount
+    ) external {
         _mint(investorAddress, _amount);
     }
 
@@ -125,7 +127,8 @@ contract Life is ERC20, Ownable, Pausable {
 
         if (
             msg.sender == owner() ||
-            msg.sender == _manageLifeToken.ownerOf(tokenId)
+            msg.sender == _manageLifeToken.ownerOf(tokenId) ||
+            msg.sender == address(_manageLifeToken)
         ) {
             // If the answer on the above questions are true,
             // mint new ERC20 $LIFE tokens. Claimable amount will be minted on the property owner

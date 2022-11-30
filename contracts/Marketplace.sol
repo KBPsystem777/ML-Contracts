@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
@@ -120,10 +120,10 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Allows a owner to offer it for sale */
-    function offerForSale(uint256 id, uint256 minSalePrice)
-        external
-        whenNotPaused
-    {
+    function offerForSale(
+        uint256 id,
+        uint256 minSalePrice
+    ) external whenNotPaused {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
@@ -314,11 +314,10 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Allows owners to accept bids for their MLIFE */
-    function acceptBid(uint256 id, uint256 minPrice)
-        external
-        whenNotPaused
-        nonReentrant
-    {
+    function acceptBid(
+        uint256 id,
+        uint256 minPrice
+    ) external whenNotPaused nonReentrant {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,

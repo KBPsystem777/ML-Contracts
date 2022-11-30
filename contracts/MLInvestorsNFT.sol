@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.17;
 
 import "erc721a/contracts/ERC721A.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -64,21 +64,18 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         return address(_lifeToken);
     }
 
-    function updateTokenBurningRate(uint256 newTokenBurningRate)
-        external
-        onlyOwner
-    {
+    function updateTokenBurningRate(
+        uint256 newTokenBurningRate
+    ) external onlyOwner {
         tokenBurningRate = newTokenBurningRate;
         emit BurningRateUpdated(newTokenBurningRate);
     }
 
     // @notice Returns the issuance rate for a specific NFT id
     // @param tokenId TokenId of the NFT
-    function lifeTokenIssuanceRate(uint256 tokenId)
-        external
-        view
-        returns (uint256)
-    {
+    function lifeTokenIssuanceRate(
+        uint256 tokenId
+    ) external view returns (uint256) {
         return _lifeTokenIssuanceRate[tokenId];
     }
 
@@ -88,7 +85,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 newLifeTokenIssuanceRate
     ) external onlyOwner {
         // TODO: Build checks to make sure that issuance rates of
-        // token that was rewards will not be updated expecially if they accumulated rewards already
+        // token that has rewards will not be updated expecially if they accumulated rewards already
         _lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
         emit TokenIssuanceRateUpdates(tokenId, newLifeTokenIssuanceRate);
     }
@@ -120,11 +117,9 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     }
 
     // @notice Function to check the claimable staking reward of an NFT
-    function checkClaimableStakingRewards(uint256 tokenId)
-        public
-        view
-        returns (uint256)
-    {
+    function checkClaimableStakingRewards(
+        uint256 tokenId
+    ) public view returns (uint256) {
         return
             (block.timestamp - _stakingRewards[tokenId]) *
             _lifeTokenIssuanceRate[tokenId];
@@ -210,10 +205,10 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      * @param tokenId TokenId of an NFT
      * @param _newLockDate Unix timestamp of the new lock date
      */
-    function setLockDate(uint256 tokenId, uint256 _newLockDate)
-        external
-        onlyOwner
-    {
+    function setLockDate(
+        uint256 tokenId,
+        uint256 _newLockDate
+    ) external onlyOwner {
         _unlockDate[tokenId] = _newLockDate;
     }
 
