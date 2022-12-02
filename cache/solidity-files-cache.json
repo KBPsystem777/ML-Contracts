@@ -1135,7 +1135,7 @@
       ]
     },
     "/Users/kpaunon/proj/web3/ML-Contracts/contracts/ManageLife.sol": {
-      "lastModificationDate": 1669832593826,
+      "lastModificationDate": 1669832673470,
       "contentHash": "df86bd5190e541df4464f165deec3465",
       "sourceName": "contracts/ManageLife.sol",
       "solcConfig": {
@@ -1177,8 +1177,8 @@
       ]
     },
     "/Users/kpaunon/proj/web3/ML-Contracts/contracts/MLInvestorsNFT.sol": {
-      "lastModificationDate": 1669827209984,
-      "contentHash": "2fd9078b04ab086981edd6743c89d22e",
+      "lastModificationDate": 1670004802087,
+      "contentHash": "0bbcf15bf0112e581ccd9ae8dbf39904",
       "sourceName": "contracts/MLInvestorsNFT.sol",
       "solcConfig": {
         "version": "0.8.17",

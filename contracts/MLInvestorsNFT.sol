@@ -23,8 +23,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     event TokenBurned(address indexed burnFrom, uint256 amount);
 
     // Using temporary metadata from BAYC's IPFS metadatax
-    string public baseURI =
-        "ipfs://QmeSjSinHpPnmXmspMjwiXyN6zS4E9zccariGR3jxcaWtq/";
+    string public baseURI = "https://ml-api-dev.herokuapp.com/api/v1/nfts/";
 
     // @notice Placeholder tokenBurning rate value. Equivalent to 7%
     uint256 public tokenBurningRate = 70000000000000000;
@@ -84,8 +83,16 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 tokenId,
         uint256 newLifeTokenIssuanceRate
     ) external onlyOwner {
-        // TODO: Build checks to make sure that issuance rates of
-        // token that has rewards will not be updated expecially if they accumulated rewards already
+        // Get first the accumulated reward of the NFTi
+        _lifeToken.mintInvestorsRewards(
+            ownerOf(tokenId),
+            checkClaimableStakingRewards(tokenId)
+        );
+
+        // Reset the init of staking rewards to current time
+        _stakingRewards[tokenId] = uint64(block.timestamp);
+
+        // Once all rewards has been minted to the owner, reset the lifeTokenIssuance rate
         _lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
         emit TokenIssuanceRateUpdates(tokenId, newLifeTokenIssuanceRate);
     }

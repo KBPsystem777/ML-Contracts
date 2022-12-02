@@ -46,7 +46,6 @@ describe(" >>> ML Marketplace test Items >>>", function () {
   })
 
   it("Should set the contract owner to equal the deployer address", async () => {
-    // console.log(await token.owner(), signerAddress)
     assert.equal(await token.owner(), signerAddress)
   })
 
@@ -138,7 +137,7 @@ describe(" >>> ML Marketplace test Items >>>", function () {
     // Run tests
     // Making sure that the Offers struct will be updated with the new offer
     const offers = await market.offers(ethers.utils.parseEther("1"))
-    console.log(offers)
+
     // Making sure that offer #1 is forSale
     assert.equal(offers[0], true)
 
