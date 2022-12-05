@@ -89,7 +89,17 @@ contract Life is ERC20, Ownable, Pausable {
             _manageLifeToken.lifeTokenIssuanceRate(tokenId);
     }
 
-    function burnLifeTokens(address from, uint256 amount) external {
+    /**
+     * @notice  Burns $LIFE token from a sender's account.
+     * @param   from Address to where to burn LIFE tokens from.
+     * @param   amount Amount to burn.
+     * @param   tokenId TokenID of the NFT. This will be used as a param for access modifier.
+     */
+    function burnLifeTokens(
+        address from,
+        uint256 amount,
+        uint256 tokenId
+    ) external onlyMembers(tokenId) {
         _burn(from, amount);
     }
 
@@ -140,11 +150,16 @@ contract Life is ERC20, Ownable, Pausable {
         }
     }
 
-    // @notice Checker to see if the token holder is an NFTi investor
-    modifier onlyPropertyOwner(uint256 tokenId) {
+    /**
+     * @notice  Custom access modifier to make sure that the caller of transactions are member of ML.
+     * @dev     This identifies if the caller is an investor or NFTi holder.
+     * @param   tokenId  TokenId of the NFT that needs to be checked.
+     */
+    modifier onlyMembers(uint256 tokenId) {
         require(
-            msg.sender == _manageLifeToken.ownerOf(tokenId),
-            "Only home owner can execute this"
+            msg.sender == _manageLifeToken.ownerOf(tokenId) ||
+                msg.sender == _investorsNft.ownerOf(tokenId),
+            "Only home owner and investors can execute this"
         );
         _;
     }

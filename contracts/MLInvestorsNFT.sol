@@ -14,7 +14,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     Life private _lifeToken;
 
     mapping(uint256 => uint256) private _lifeTokenIssuanceRate;
-    mapping(uint256 => uint64) private _stakingRewards;
+    mapping(uint256 => uint64) public _stakingRewards;
     mapping(uint256 => uint256) public _unlockDate;
 
     event BaseURIUpdated(string _newURIAddress);
@@ -128,13 +128,17 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 tokenId
     ) public view returns (uint256) {
         return
-            (block.timestamp - _stakingRewards[tokenId]) *
+            (uint64(block.timestamp) - _stakingRewards[tokenId]) *
             _lifeTokenIssuanceRate[tokenId];
     }
 
-    // @notice Function to claim staking rewards
-    // @param tokenId TokenID of the NFT
-    function claimStakingRewards(uint256 tokenId) public onlyInvestor(tokenId) {
+    /**
+     * @notice  Claim $LIFE token staking rewards.
+     * @dev The first require method makes sure that the msg.sender is the owner of the token. Second require makes sure that the one claiming is not the ML wallet.
+     * Once the require statements passed, the rewards will be minted on the caller address. Once success, the timestamp of _stakingRewards for that tokenId will be reset.
+     * @param   tokenId TokenId of the NFT.
+     */
+    function claimStakingRewards(uint256 tokenId) public {
         require(
             msg.sender == ownerOf(tokenId),
             "Only the owner of the tokenId can claim the rewards"
@@ -152,16 +156,14 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         emit StakingClaimed(tokenId);
     }
 
-    function burnTokens(uint256 amount) external {
-        // Burn a percentage of newly minted token
-        uint256 amountToBurn = _lifeToken.balanceOf(msg.sender) *
-            tokenBurningRate;
-
-        _lifeToken.burnLifeTokens(
-            msg.sender,
-            amountToBurn / 1000000000000000000
-        );
-
+    /**
+     * @notice  Burn $LIFE token rewards from an NFTi holder.
+     * @dev     Burn percentage if being managed from the frontend app.
+     * @param   amount Calculated amount to be burned.
+     * @param   tokenId TokenId of the NFT, will be used as param in access modifier.
+     */
+    function burnTokens(uint256 amount, uint256 tokenId) external {
+        _lifeToken.burnLifeTokens(msg.sender, amount, tokenId);
         emit TokenBurned(msg.sender, amount);
     }
 

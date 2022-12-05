@@ -412,6 +412,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         }
     }
 
+    // TODO: Address this empty receive function by building a record keeping routines
     receive() external payable {}
 
     function _safeTransferETH(address to, uint256 value) internal {
