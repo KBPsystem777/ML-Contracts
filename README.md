@@ -10,10 +10,10 @@ Checkout https://app.clickup.com/8626173/v/dc/877zx-14165/877zx-14505 for detail
 
 ## Contract addresses - Goerli Testnet
 
-LIFE Token: https://goerli.etherscan.io/address/0x37854ea8B86899BDEd2935f11Da99C1Ca236F817
+LIFE Token: https://goerli.etherscan.io/address/0x54E81F144e04cc7566284cEf592B95E6aDac0749
 
-NFT: https://goerli.etherscan.io/address/0x401Ec7c05f28875B6c41DE09724e4E7B884aADD0
+NFT: https://goerli.etherscan.io/address/0x1895a83bfd55042107ac511e823b3e07632889d0
 
 Marketplace: https://goerli.etherscan.io/address/0x2ab4bcaf034af4ec7aea9ded79bf8e33a6763421
 
-NFTi: https://goerli.etherscan.io/token/0x401ec7c05f28875b6c41de09724e4e7b884aadd0
+NFTi: https://goerli.etherscan.io/address/0x3335510b24e9b0048ade1ba9ba1557d3ed274c90
