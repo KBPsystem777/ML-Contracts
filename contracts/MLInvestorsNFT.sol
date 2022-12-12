@@ -11,22 +11,18 @@ import "./Life.sol";
 // @title ManageLife Investor's NFT
 // @notice This is the NFTi contract of ML
 contract ManageLifeInvestorsNFT is ERC721A, Ownable {
-    Life private _lifeToken;
+    Life public lifeToken;
 
     mapping(uint256 => uint256) private _lifeTokenIssuanceRate;
-    mapping(uint256 => uint64) private _stakingRewards;
+    mapping(uint256 => uint64) public _stakingRewards;
     mapping(uint256 => uint256) public _unlockDate;
 
     event BaseURIUpdated(string _newURIAddress);
-    event BurningRateUpdated(uint256 newTokenBurningRate);
     event StakingClaimed(uint256 tokenId);
     event TokenBurned(address indexed burnFrom, uint256 amount);
 
     // Using temporary metadata from BAYC's IPFS metadatax
     string public baseURI = "https://ml-api-dev.herokuapp.com/api/v1/nfts/";
-
-    // @notice Placeholder tokenBurning rate value. Equivalent to 7%
-    uint256 public tokenBurningRate = 70000000000000000;
 
     event TokenIssuanceRateUpdates(
         uint256 indexed tokenId,
@@ -45,29 +41,13 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         return baseURI;
     }
 
-    // @notice Custom function to get the adderss of the NFT owner
-    function ownerOfTokenId(uint256 tokenId) public view returns (address) {
-        return ownerOf(tokenId);
-    }
-
     function updateBaseURI(string memory _newURIAddress) external onlyOwner {
         baseURI = _newURIAddress;
         emit BaseURIUpdated(_newURIAddress);
     }
 
     function setLifeToken(address lifeToken_) external onlyOwner {
-        _lifeToken = Life(lifeToken_);
-    }
-
-    function lifeToken() external view returns (address) {
-        return address(_lifeToken);
-    }
-
-    function updateTokenBurningRate(
-        uint256 newTokenBurningRate
-    ) external onlyOwner {
-        tokenBurningRate = newTokenBurningRate;
-        emit BurningRateUpdated(newTokenBurningRate);
+        lifeToken = Life(lifeToken_);
     }
 
     // @notice Returns the issuance rate for a specific NFT id
@@ -84,7 +64,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 newLifeTokenIssuanceRate
     ) external onlyOwner {
         // Get first the accumulated reward of the NFTi
-        _lifeToken.mintInvestorsRewards(
+        lifeToken.mintInvestorsRewards(
             ownerOf(tokenId),
             checkClaimableStakingRewards(tokenId)
         );
@@ -100,7 +80,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     // @notice Function to initialize the staking rewards
     function initStakingRewards(uint256 tokenId) internal onlyOwner {
         require(
-            address(_lifeToken) != address(0),
+            address(lifeToken) != address(0),
             "ManageLife Token is not set"
         );
 
@@ -128,13 +108,17 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 tokenId
     ) public view returns (uint256) {
         return
-            (block.timestamp - _stakingRewards[tokenId]) *
+            (uint64(block.timestamp) - _stakingRewards[tokenId]) *
             _lifeTokenIssuanceRate[tokenId];
     }
 
-    // @notice Function to claim staking rewards
-    // @param tokenId TokenID of the NFT
-    function claimStakingRewards(uint256 tokenId) public onlyInvestor(tokenId) {
+    /**
+     * @notice  Claim $LIFE token staking rewards.
+     * @dev The first require method makes sure that the msg.sender is the owner of the token. Second require makes sure that the one claiming is not the ML wallet.
+     * Once the require statements passed, the rewards will be minted on the caller address. Once success, the timestamp of _stakingRewards for that tokenId will be reset.
+     * @param   tokenId TokenId of the NFT.
+     */
+    function claimStakingRewards(uint256 tokenId) public {
         require(
             msg.sender == ownerOf(tokenId),
             "Only the owner of the tokenId can claim the rewards"
@@ -142,7 +126,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         // Making sure that ML wallet will not claim the reward
         require(msg.sender != owner(), "Platform wallet cannot claim");
 
-        _lifeToken.mintInvestorsRewards(
+        lifeToken.mintInvestorsRewards(
             msg.sender,
             checkClaimableStakingRewards(tokenId)
         );
@@ -152,16 +136,14 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         emit StakingClaimed(tokenId);
     }
 
-    function burnTokens(uint256 amount) external {
-        // Burn a percentage of newly minted token
-        uint256 amountToBurn = _lifeToken.balanceOf(msg.sender) *
-            tokenBurningRate;
-
-        _lifeToken.burnLifeTokens(
-            msg.sender,
-            amountToBurn / 1000000000000000000
-        );
-
+    /**
+     * @notice  Burn $LIFE token rewards from an NFTi holder.
+     * @dev     Burn percentage if being managed from the frontend app.
+     * @param   amount Calculated amount to be burned.
+     * @param   tokenId TokenId of the NFT, will be used as param in access modifier.
+     */
+    function burnTokens(uint256 amount, uint256 tokenId) external {
+        lifeToken.burnLifeTokens(msg.sender, amount, tokenId);
         emit TokenBurned(msg.sender, amount);
     }
 
@@ -236,7 +218,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      * in order for the function below to run successfully
      */
     function forceClaimNft(uint256 tokenId) external onlyOwner {
-        super.transferFrom(ownerOfTokenId(tokenId), msg.sender, tokenId);
+        super.transferFrom(ownerOf(tokenId), msg.sender, tokenId);
     }
 
     // @notice Checker to see if the token holder is an NFTi investor

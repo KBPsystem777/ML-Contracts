@@ -11,19 +11,18 @@ import "./Marketplace.sol";
 // @title ManageLife NFT
 // @notice NFT contract for ManageLife Platform
 contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
-    uint256 private _tokenId = 1;
-    Life private _lifeToken;
-    Marketplace private _marketplace;
+    Life public lifeToken;
+    Marketplace public marketplace;
 
     /// @notice This is the wallet address where all property NFTs will be
     /// stored as soon as the property got vacated or returned to ML
     address public PROPERTY_CUSTODIAN;
 
     mapping(uint256 => uint256) private _lifeTokenIssuanceRate;
-    mapping(uint256 => bool) private _fullyPayed;
+    mapping(uint256 => bool) private _fullyPaid;
 
     event FullyPayed(uint256 tokenId);
-    event StakingIniatialized(uint256 tokenId);
+    event StakingInitialized(uint256 tokenId);
     event PropertyReturned(address indexed from, uint256 tokenId);
     event PropertyCustodianUpdated(address newPropertyCustodian);
     event TokenIssuanceRateUpdated(
@@ -44,19 +43,11 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     function setMarketplace(address payable marketplace_) external onlyOwner {
-        _marketplace = Marketplace(marketplace_);
-    }
-
-    function marketplace() external view returns (address) {
-        return address(_marketplace);
+        marketplace = Marketplace(marketplace_);
     }
 
     function setLifeToken(address lifeToken_) external onlyOwner {
-        _lifeToken = Life(lifeToken_);
-    }
-
-    function lifeToken() external view returns (address) {
-        return address(_lifeToken);
+        lifeToken = Life(lifeToken_);
     }
 
     // Returns the issuance rate for a specif NFT id
@@ -67,15 +58,15 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     function fullyPayed(uint256 tokenId) public view returns (bool) {
-        return _fullyPayed[tokenId];
+        return _fullyPaid[tokenId];
     }
 
     // This will mark the property as paid
     function markFullyPayed(uint256 tokenId) external onlyOwner {
-        _fullyPayed[tokenId] = true;
+        _fullyPaid[tokenId] = true;
         // @notice Initialized staking for this tokenId if the tokenId is not owned by the contract owner
         if (owner() != ownerOf(tokenId)) {
-            _lifeToken.claimStakingRewards(tokenId);
+            lifeToken.claimStakingRewards(tokenId);
         }
         emit FullyPayed(tokenId);
     }
@@ -84,7 +75,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         uint256 propertyId,
         uint256 lifeTokenIssuanceRate_
     ) external onlyOwner {
-        require(address(_lifeToken) != address(0), "Life token is not set");
+        require(address(lifeToken) != address(0), "Life token is not set");
         uint256 tokenId = propertyId;
         require(!_exists(tokenId), "Error: TokenId already minted");
         _mint(owner(), propertyId);
@@ -116,7 +107,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         require(
             fullyPayed(tokenId) ||
                 ownerOf(tokenId) == owner() ||
-                to == address(_marketplace),
+                to == address(marketplace),
             "Approval restricted"
         );
         super.approve(to, tokenId);
@@ -131,18 +122,18 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
             fullyPayed(tokenId) ||
                 from == owner() ||
                 to == owner() ||
-                msg.sender == address(_marketplace),
+                msg.sender == address(marketplace),
             "Transfers restricted"
         );
         if (!fullyPayed(tokenId)) {
             if (from == owner()) {
-                _lifeToken.initStakingRewards(tokenId);
+                lifeToken.initStakingRewards(tokenId);
             }
             if (to == owner() && from != address(0)) {
-                _lifeToken.claimStakingRewards(tokenId);
+                lifeToken.claimStakingRewards(tokenId);
             }
         }
-        emit StakingIniatialized(tokenId);
+        emit StakingInitialized(tokenId);
 
         super._beforeTokenTransfer(from, to, tokenId);
     }
@@ -168,9 +159,9 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         uint256 tokenId,
         uint256 newLifeTokenIssuanceRate
     ) external onlyOwner {
-        _lifeToken.claimStakingRewards(tokenId);
+        lifeToken.claimStakingRewards(tokenId);
         _lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
-        _lifeToken.updateStartOfStaking(tokenId, uint64(block.timestamp));
+        lifeToken.updateStartOfStaking(tokenId, uint64(block.timestamp));
 
         emit TokenIssuanceRateUpdated(tokenId, newLifeTokenIssuanceRate);
     }

@@ -20,18 +20,18 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     // market trading hence only ML admins are allowed to trade
     bool public allowTrading = true;
 
-    ManageLife mLife; // instance of the NFT contract
+    ManageLife public mLife; // instance of the MLIFE NFT contract
 
     struct Offer {
         bool isForSale;
-        uint256 id;
+        uint32 offerId;
         address seller;
-        uint256 minValue; // in ether
-        address onlySellTo;
+        uint256 price;
+        address offeredTo;
     }
 
     struct Bid {
-        uint256 id;
+        uint32 id;
         address bidder;
         uint256 value;
     }
@@ -46,11 +46,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     // A record of the highest home bid
     mapping(uint256 => Bid) public bids;
 
-    event Offered(
-        uint256 indexed id,
-        uint256 minValue,
-        address indexed toAddress
-    );
+    event Offered(uint256 indexed id, uint256 price, address indexed toAddress);
     event BidEntered(
         uint256 indexed id,
         uint256 value,
@@ -89,11 +85,6 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         emit TradingStatus(_isTradingAllowed);
     }
 
-    /* Returns the MLIFE contract address currently being used */
-    function mlifeAddress() external view returns (address) {
-        return address(mLife);
-    }
-
     /* Allows the owner of the contract to set a new contract address */
     function setNftContract(address newAddress) external onlyOwner {
         require(newAddress != address(0x0), "zero address");
@@ -114,14 +105,14 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Allows the owner to stop offering it for sale */
-    function cancelForSale(uint256 id) external onlyMLifeOwner(id) {
+    function cancelForSale(uint32 id) external onlyMLifeOwner(id) {
         offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
         emit Cancelled(id);
     }
 
     /* Allows a owner to offer it for sale */
     function offerForSale(
-        uint256 id,
+        uint32 offerId,
         uint256 minSalePrice
     ) external whenNotPaused {
         if (allowTrading == false) {
@@ -129,33 +120,33 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
-            offers[id] = Offer(
+            offers[offerId] = Offer(
                 true,
-                id,
+                offerId,
                 msg.sender,
                 minSalePrice,
                 address(0x0)
             );
-            emit Offered(id, minSalePrice, address(0x0));
+            emit Offered(offerId, minSalePrice, address(0x0));
         } else {
             require(
-                msg.sender == mLife.ownerOf(id),
+                msg.sender == mLife.ownerOf(offerId),
                 "Only for the MLIFE owner"
             );
-            offers[id] = Offer(
+            offers[offerId] = Offer(
                 true,
-                id,
+                offerId,
                 msg.sender,
                 minSalePrice,
                 address(0x0)
             );
-            emit Offered(id, minSalePrice, address(0x0));
+            emit Offered(offerId, minSalePrice, address(0x0));
         }
     }
 
     /* Allows a owner to offer it for sale to a specific address */
     function offerForSaleToAddress(
-        uint256 id,
+        uint32 offerId,
         uint256 minSalePrice,
         address toAddress
     ) external whenNotPaused {
@@ -164,19 +155,31 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
-            offers[id] = Offer(true, id, msg.sender, minSalePrice, toAddress);
+            offers[offerId] = Offer(
+                true,
+                offerId,
+                msg.sender,
+                minSalePrice,
+                toAddress
+            );
         } else {
             require(
-                msg.sender == mLife.ownerOf(id),
+                msg.sender == mLife.ownerOf(offerId),
                 "Only for the MLIFE owner"
             );
-            offers[id] = Offer(true, id, msg.sender, minSalePrice, toAddress);
-            emit Offered(id, minSalePrice, toAddress);
+            offers[offerId] = Offer(
+                true,
+                offerId,
+                msg.sender,
+                minSalePrice,
+                toAddress
+            );
+            emit Offered(offerId, minSalePrice, toAddress);
         }
     }
 
     /* Allows users to buy a offered for sale */
-    function buy(uint256 id) external payable whenNotPaused nonReentrant {
+    function buy(uint32 id) external payable whenNotPaused {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
@@ -187,11 +190,11 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             uint256 amount = msg.value;
             require(offer.isForSale, "MLIFE is not for sale");
             require(
-                offer.onlySellTo == address(0x0) ||
-                    offer.onlySellTo == msg.sender,
+                offer.offeredTo == address(0x0) ||
+                    offer.offeredTo == msg.sender,
                 "this offer is not for you"
             );
-            require(amount == offer.minValue, "not enough ether");
+            require(amount == offer.price, "not enough ether");
             address seller = offer.seller;
             require(seller != msg.sender, "seller == msg.sender");
             require(
@@ -202,7 +205,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
 
             // Transfer to msg.sender from seller.
-            mLife.safeTransferFrom(seller, msg.sender, id);
+            mLife.transferFrom(seller, msg.sender, id);
 
             // Transfer commission to admin!
             uint256 commission = 0;
@@ -233,11 +236,11 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             uint256 amount = msg.value;
             require(offer.isForSale, "MLIFE is not for sale");
             require(
-                offer.onlySellTo == address(0x0) ||
-                    offer.onlySellTo == msg.sender,
+                offer.offeredTo == address(0x0) ||
+                    offer.offeredTo == msg.sender,
                 "this offer is not for you"
             );
-            require(amount == offer.minValue, "not enough ether");
+            require(amount == offer.price, "not enough ether");
             address seller = offer.seller;
             require(seller != msg.sender, "seller == msg.sender");
             require(
@@ -248,7 +251,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
 
             // Transfer to msg.sender from seller.
-            mLife.safeTransferFrom(seller, msg.sender, id);
+            mLife.transferFrom(seller, msg.sender, id);
 
             // Transfer commission to admin!
             uint256 commission = 0;
@@ -273,7 +276,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Allows users to enter bids for any properties */
-    function placeBid(uint256 id) external payable whenNotPaused nonReentrant {
+    function placeBid(uint32 id) external payable whenNotPaused nonReentrant {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
@@ -314,10 +317,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Allows owners to accept bids for their MLIFE */
-    function acceptBid(
-        uint256 id,
-        uint256 minPrice
-    ) external whenNotPaused nonReentrant {
+    function acceptBid(uint32 id, uint256 minPrice) external whenNotPaused {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
@@ -335,7 +335,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             bids[id] = Bid(id, address(0x0), 0);
 
             // Transfer MLIFE to  Bidder
-            mLife.safeTransferFrom(msg.sender, bidder, id);
+            mLife.transferFrom(msg.sender, bidder, id);
 
             uint256 commission = 0;
             // Transfer Commission!
@@ -366,7 +366,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             bids[id] = Bid(id, address(0x0), 0);
 
             // Transfer MLIFE to  Bidder
-            mLife.safeTransferFrom(msg.sender, bidder, id);
+            mLife.transferFrom(msg.sender, bidder, id);
 
             uint256 commission = 0;
             // Transfer Commission!
@@ -383,7 +383,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     }
 
     /* Allows bidders to withdraw their bids */
-    function withdrawBid(uint256 id) external nonReentrant {
+    function withdrawBid(uint32 id) external nonReentrant {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
@@ -412,10 +412,15 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         }
     }
 
+    // TODO: Address this empty receive function by building a record keeping routines
     receive() external payable {}
 
     function _safeTransferETH(address to, uint256 value) internal {
-        Address.sendValue(payable(to), value);
+        (bool success, ) = to.call{value: value}("");
+        require(
+            success,
+            "Address: unable to send value, recipient may have reverted"
+        );
     }
 
     function setMLAdmin(address newAdminAddress) external onlyOwner {
