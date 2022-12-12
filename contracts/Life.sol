@@ -2,7 +2,6 @@
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "./ManageLife.sol";
@@ -14,8 +13,6 @@ contract Life is ERC20, Ownable, Pausable {
     mapping(uint256 => uint64) public startOfStakingRewards;
     ManageLife private _manageLifeToken;
     ManageLifeInvestorsNFT private _investorsNft;
-
-    uint256 public burningRate = 70000000000000000;
 
     constructor() ERC20("Life", "LIFE") {
         _mint(msg.sender, 7000000 * 10 ** decimals());
@@ -101,10 +98,6 @@ contract Life is ERC20, Ownable, Pausable {
         uint256 tokenId
     ) external onlyMembers(tokenId) {
         _burn(from, amount);
-    }
-
-    function updateBurningRate(uint256 newBurningRate) external onlyOwner {
-        burningRate = newBurningRate;
     }
 
     // @notice Function to mint new token supply
