@@ -4,115 +4,172 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
 import "./ManageLife.sol";
 
-// @title ManageLife Marketplace contract
-// @notice This is the smart contract for ML marketplace
+/**
+ * @notice Marketplace contract for ManageLife.
+ * This contract the market trading of NFTs in the ML ecosystem.
+ * In real life, an NFT here represents a home or real-estate property
+ * run by ManageLife.
+ *
+ * @author https://managelife.co
+ */
 contract Marketplace is ReentrancyGuard, Pausable, Ownable {
-    using Address for address;
-
-    uint256 public constant PERCENTS_DIVIDER = 10000;
-
     address public mlAdmin;
 
-    // If set to false, this will resctrict customers to perform
-    // market trading hence only ML admins are allowed to trade
+    /// Deployer address will be considered as the ML admins
+    constructor() {
+        mlAdmin = msg.sender;
+    }
+
+    /// Percent divider to calculate ML's transaction earnings.
+    uint256 public constant PERCENTS_DIVIDER = 10000;
+
+    /** @notice Trading status. This determines if normal users will be
+     * allowed to permitted to perform market trading (Bidding, Selling, Buy).
+     * By default Admin wallet will perform all these functions on behalf of all customers
+     * due to legal requirements.
+     * Once legal landscape permits, customers will be able to perform market trading by themselves.
+     */
     bool public allowTrading = true;
 
-    ManageLife public mLife; // instance of the MLIFE NFT contract
+    /// instance of the MLIFE NFT contract.
+    ManageLife public mLife;
 
     struct Offer {
-        bool isForSale;
-        uint32 offerId;
+        uint32 tokenId;
         address seller;
         uint256 price;
         address offeredTo;
     }
 
     struct Bid {
-        uint32 id;
         address bidder;
         uint256 value;
     }
 
-    // Admin Fee
+    /// Default admin fee.
     uint256 public adminPercent = 200;
+
+    /// Status for adming pending claimable earnings.
     uint256 public adminPending;
 
-    // A record of homes that are offered for sale at a specific minimum value, and perhaps to a specific person
+    /// Mapping of MLIFE tokenIds to Offers
     mapping(uint256 => Offer) public offers;
 
-    // A record of the highest home bid
+    /// Mapping of MLIFE tokenIds to Bids
     mapping(uint256 => Bid) public bids;
 
-    event Offered(uint256 indexed id, uint256 price, address indexed toAddress);
+    event Offered(
+        uint256 indexed tokenId,
+        uint256 price,
+        address indexed toAddress
+    );
+
     event BidEntered(
-        uint256 indexed id,
+        uint32 indexed tokenId,
         uint256 value,
         address indexed fromAddress
     );
-    event BidWithdrawn(uint256 indexed id, uint256 value);
+
     event BidCancelled(
-        uint256 indexed id,
+        uint256 indexed tokenId,
         uint256 value,
         address indexed bidder
     );
+
     event Bought(
-        uint256 indexed id,
+        uint256 indexed tokenId,
         uint256 value,
         address indexed fromAddress,
         address indexed toAddress,
         bool isInstant
     );
-    event Cancelled(uint256 indexed id);
+    event BidWithdrawn(uint256 indexed tokenId, uint256 value);
+    event Cancelled(uint256 indexed tokenId);
     event TradingStatus(bool _isTradingAllowed);
+    event Received(address, uint);
 
-    constructor() {
-        mlAdmin = msg.sender;
-    }
+    error InvalidPercent(uint256 _percent, uint256 minimumPercent);
 
+    /// @notice Security feature to Pause smart contracts transactions
     function pause() external whenNotPaused onlyOwner {
         _pause();
     }
 
+    /// @notice Unpausing the Paused transactions feature.
     function unpause() external whenPaused onlyOwner {
         _unpause();
     }
 
+    /**
+     * @notice Update the `allowTrading` status to true/false.
+     * @dev Can only be executed by contract owner. Will emit TradingStatus event.
+     * @param _isTradingAllowed New boolean status to set.
+     */
     function setTrading(bool _isTradingAllowed) external onlyOwner {
         allowTrading = _isTradingAllowed;
         emit TradingStatus(_isTradingAllowed);
     }
 
-    /* Allows the owner of the contract to set a new contract address */
-    function setNftContract(address newAddress) external onlyOwner {
-        require(newAddress != address(0x0), "zero address");
-        mLife = ManageLife(newAddress);
+    /**
+     * @notice Set the MLIFE contract.
+     * @dev Important to set this after deployment. Only MLIFE address is needed.
+     * Will not access 0x0 (zero/invalid) address.
+     * @param nftAddress Address of MLIFE contract.
+     */
+    function setNftContract(address nftAddress) external onlyOwner {
+        require(nftAddress != address(0x0), "Zero address");
+        mLife = ManageLife(nftAddress);
     }
 
-    /* Allows the owner of the contract to set a new Admin Fee Percentage */
+    /**
+     * @notice Allows admin wallet to set new percentage fee.
+     * @dev This throws an error is the new percentage is less than 500.
+     * @param _percent New admin percentage.
+     */
     function setAdminPercent(uint256 _percent) external onlyOwner {
-        require(_percent < 500, "invalid percent");
+        if (_percent < 500) {
+            revert InvalidPercent({_percent: _percent, minimumPercent: 500});
+        }
         adminPercent = _percent;
     }
 
     /*Allows the owner of the contract to withdraw pending ETH */
+    /**
+     * @notice Withdraw marketplace earnings.
+     * @dev Can only be triggered by the admin wallet or contract owner.
+     * This will transfer the market earning to the admin wallet.
+     */
     function withdraw() external onlyOwner nonReentrant {
         uint256 amount = adminPending;
         adminPending = 0;
-        _safeTransferETH(msg.sender, amount);
+        _safeTransferETH(mlAdmin, amount);
     }
 
-    /* Allows the owner to stop offering it for sale */
-    function cancelForSale(uint32 id) external onlyMLifeOwner(id) {
-        offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
-        emit Cancelled(id);
+    /**
+     * @notice Cancel and existing sale offer.
+     * @dev Once triggered, the offer struct for this tokenId will be destroyed.
+     * Can only be called by MLIFE holders.
+     * @param tokenId TokenId of the NFT.
+     */
+    function cancelForSale(uint32 tokenId) external onlyMLifeOwner(tokenId) {
+        delete offers[tokenId];
+        emit Cancelled(tokenId);
     }
 
-    /* Allows a owner to offer it for sale */
+    /**
+     * @notice Offer a property or NFT for sale in the marketplace.
+     *
+     * @dev If `allowTrading` is equals to true,
+     * users are allowed to execute this function. Else, admin wallet will facilitate
+     * the offering sale on their behalf.
+     *
+     * @param tokenId MLIFE tokenId to be put on sale.
+     * @param minSalePrice Minimum sale price of the property.
+     */
     function offerForSale(
-        uint32 offerId,
+        uint32 tokenId,
         uint256 minSalePrice
     ) external whenNotPaused {
         if (allowTrading == false) {
@@ -120,33 +177,41 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
-            offers[offerId] = Offer(
-                true,
-                offerId,
+            offers[tokenId] = Offer(
+                tokenId,
                 msg.sender,
                 minSalePrice,
                 address(0x0)
             );
-            emit Offered(offerId, minSalePrice, address(0x0));
+            emit Offered(tokenId, minSalePrice, address(0x0));
         } else {
             require(
-                msg.sender == mLife.ownerOf(offerId),
+                msg.sender == mLife.ownerOf(tokenId),
                 "Only for the MLIFE owner"
             );
-            offers[offerId] = Offer(
-                true,
-                offerId,
+            offers[tokenId] = Offer(
+                tokenId,
                 msg.sender,
                 minSalePrice,
                 address(0x0)
             );
-            emit Offered(offerId, minSalePrice, address(0x0));
+            emit Offered(tokenId, minSalePrice, address(0x0));
         }
     }
 
-    /* Allows a owner to offer it for sale to a specific address */
+    /**
+     * @notice Offer a property for sale to a specific wallet address only.
+     *
+     * @dev Allows MLIFE holders to sell their property to a specific wallet address.
+     * By default, this process is being performed by the admin wallet on behalf of the customers
+     * not until the `allowTrading` has been set to `true`.
+     *
+     * @param tokenId TokenId of the property to be offered.
+     * @param minSalePrice Minimum sale prices of the property.
+     * @param toAddress Wallet address on where the property will be offered to.
+     */
     function offerForSaleToAddress(
-        uint32 offerId,
+        uint32 tokenId,
         uint256 minSalePrice,
         address toAddress
     ) external whenNotPaused {
@@ -155,266 +220,301 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
-            offers[offerId] = Offer(
-                true,
-                offerId,
+            offers[tokenId] = Offer(
+                tokenId,
                 msg.sender,
                 minSalePrice,
                 toAddress
             );
         } else {
             require(
-                msg.sender == mLife.ownerOf(offerId),
+                msg.sender == mLife.ownerOf(tokenId),
                 "Only for the MLIFE owner"
             );
-            offers[offerId] = Offer(
-                true,
-                offerId,
+            offers[tokenId] = Offer(
+                tokenId,
                 msg.sender,
                 minSalePrice,
                 toAddress
             );
-            emit Offered(offerId, minSalePrice, toAddress);
+            emit Offered(tokenId, minSalePrice, toAddress);
         }
     }
 
-    /* Allows users to buy a offered for sale */
-    function buy(uint32 id) external payable whenNotPaused {
+    /**
+     * @notice Allows users to buy a property that is registered in ML.
+     *
+     * @dev By default, this operation is disabled for customers.
+     * Only admin wallet can perform this on their behalf until the
+     * `allowTrading` variable is equals to true.
+     *
+     * @param tokenId TokenId of the property.
+     */
+    function buy(uint32 tokenId) external payable whenNotPaused {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
 
-            Offer memory offer = offers[id];
+            Offer memory offer = offers[tokenId];
             uint256 amount = msg.value;
-            require(offer.isForSale, "MLIFE is not for sale");
             require(
                 offer.offeredTo == address(0x0) ||
                     offer.offeredTo == msg.sender,
-                "this offer is not for you"
+                "This offer is not for you"
             );
-            require(amount == offer.price, "not enough ether");
+            require(amount == offer.price, "Not enough ether");
             address seller = offer.seller;
-            require(seller != msg.sender, "seller == msg.sender");
+            require(seller != msg.sender, "Seller == msg.sender");
             require(
-                seller == mLife.ownerOf(id),
-                "seller no longer owner of MLIFE"
+                seller == mLife.ownerOf(tokenId),
+                "Seller is not an MLIFE owner"
             );
 
-            offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
+            offers[tokenId] = Offer(tokenId, msg.sender, 0, address(0x0));
 
-            // Transfer to msg.sender from seller.
-            mLife.transferFrom(seller, msg.sender, id);
+            /// Transfer to msg.sender from seller.
+            mLife.transferFrom(seller, msg.sender, tokenId);
 
-            // Transfer commission to admin!
+            /// Transfer commission to admin
             uint256 commission = 0;
             if (adminPercent > 0) {
                 commission = (amount * adminPercent) / PERCENTS_DIVIDER;
                 adminPending += commission;
             }
 
-            // Transfer ETH to seller!
+            /// Transfer ETH to seller
             _safeTransferETH(seller, amount - commission);
 
-            emit Bought(id, amount, seller, msg.sender, true);
+            emit Bought(tokenId, amount, seller, msg.sender, true);
 
-            // refund bid if new owner is buyer!
-            Bid memory bid = bids[id];
+            /// Refund bid if new owner is buyer
+            Bid memory bid = bids[tokenId];
             if (bid.bidder == msg.sender) {
                 _safeTransferETH(bid.bidder, bid.value);
-                emit BidCancelled(id, bid.value, bid.bidder);
-                bids[id] = Bid(id, address(0x0), 0);
+                emit BidCancelled(tokenId, bid.value, bid.bidder);
+                bids[tokenId] = Bid(address(0x0), 0);
             }
         } else {
             require(
-                msg.sender == mLife.ownerOf(id),
+                msg.sender == mLife.ownerOf(tokenId),
                 "Only for the MLIFE owner"
             );
 
-            Offer memory offer = offers[id];
+            Offer memory offer = offers[tokenId];
             uint256 amount = msg.value;
-            require(offer.isForSale, "MLIFE is not for sale");
             require(
                 offer.offeredTo == address(0x0) ||
                     offer.offeredTo == msg.sender,
-                "this offer is not for you"
+                "This offer is not for you"
             );
-            require(amount == offer.price, "not enough ether");
+            require(amount == offer.price, "Not enough ether");
             address seller = offer.seller;
-            require(seller != msg.sender, "seller == msg.sender");
+            require(seller != msg.sender, "Seller == msg.sender");
             require(
-                seller == mLife.ownerOf(id),
-                "seller no longer owner of MLIFE"
+                seller == mLife.ownerOf(tokenId),
+                "Seller is not an MLIFE owner"
             );
 
-            offers[id] = Offer(false, id, msg.sender, 0, address(0x0));
+            offers[tokenId] = Offer(tokenId, msg.sender, 0, address(0x0));
 
-            // Transfer to msg.sender from seller.
-            mLife.transferFrom(seller, msg.sender, id);
+            /// Transfer to msg.sender from seller.
+            mLife.transferFrom(seller, msg.sender, tokenId);
 
-            // Transfer commission to admin!
+            /// Transfer commission to admin!
             uint256 commission = 0;
             if (adminPercent > 0) {
                 commission = (amount * adminPercent) / PERCENTS_DIVIDER;
                 adminPending += commission;
             }
 
-            // Transfer ETH to seller!
+            /// Transfer ETH to seller!
             _safeTransferETH(seller, amount - commission);
 
-            emit Bought(id, amount, seller, msg.sender, true);
+            emit Bought(tokenId, amount, seller, msg.sender, true);
 
-            // refund bid if new owner is buyer!
-            Bid memory bid = bids[id];
+            /// Refund bid if new owner is buyer
+            Bid memory bid = bids[tokenId];
             if (bid.bidder == msg.sender) {
                 _safeTransferETH(bid.bidder, bid.value);
-                emit BidCancelled(id, bid.value, bid.bidder);
-                bids[id] = Bid(id, address(0x0), 0);
+                emit BidCancelled(tokenId, bid.value, bid.bidder);
+                bids[tokenId] = Bid(address(0x0), 0);
             }
         }
     }
 
-    /* Allows users to enter bids for any properties */
-    function placeBid(uint32 id) external payable whenNotPaused nonReentrant {
+    /**
+     * @notice Allows users to submit a bid to any properties.
+     *
+     * @dev By default, bidding is disabled for customers.
+     * Only admin wallet can perform bidding on their behalf until the
+     * `allowTrading` variable is equals to true.
+     *
+     * @param   tokenId tokenId of the property.
+     */
+    function placeBid(
+        uint32 tokenId
+    ) external payable whenNotPaused nonReentrant {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
 
-            require(msg.value != 0, "cannot enter bid of zero");
-            Bid memory existing = bids[id];
-            require(msg.value > existing.value, "your bid is too low");
+            require(msg.value != 0, "Cannot enter bid of zero");
+            Bid memory existing = bids[tokenId];
+            require(msg.value > existing.value, "Your bid is too low");
             if (existing.value > 0) {
-                // Refund existing bid
+                /// Refund existing bid
                 _safeTransferETH(existing.bidder, existing.value);
-                emit BidCancelled(id, existing.value, existing.bidder);
+                emit BidCancelled(tokenId, existing.value, existing.bidder);
             }
-            bids[id] = Bid(id, msg.sender, msg.value);
-            emit BidEntered(id, msg.value, msg.sender);
+            bids[tokenId] = Bid(msg.sender, msg.value);
+            emit BidEntered(tokenId, msg.value, msg.sender);
         } else {
             require(
-                msg.sender == mLife.ownerOf(id),
+                msg.sender == mLife.ownerOf(tokenId),
                 "Only for the MLIFE owner"
             );
 
             require(
-                mLife.ownerOf(id) != msg.sender,
+                mLife.ownerOf(tokenId) != msg.sender,
                 "You already own this MLIFE"
             );
-            require(msg.value != 0, "cannot enter bid of zero");
-            Bid memory existing = bids[id];
-            require(msg.value > existing.value, "your bid is too low");
+            require(msg.value != 0, "Cannot enter bid of zero");
+            Bid memory existing = bids[tokenId];
+            require(msg.value > existing.value, "Your bid is too low");
             if (existing.value > 0) {
-                // Refund existing bid
+                /// Refund existing bid
                 _safeTransferETH(existing.bidder, existing.value);
-                emit BidCancelled(id, existing.value, existing.bidder);
+                emit BidCancelled(tokenId, existing.value, existing.bidder);
             }
-            bids[id] = Bid(id, msg.sender, msg.value);
-            emit BidEntered(id, msg.value, msg.sender);
+            bids[tokenId] = Bid(msg.sender, msg.value);
+            emit BidEntered(tokenId, msg.value, msg.sender);
         }
     }
 
-    /* Allows owners to accept bids for their MLIFE */
-    function acceptBid(uint32 id, uint256 minPrice) external whenNotPaused {
+    /**
+     * @notice Allows home owners to accept bids on their properties
+     * @param tokenId tokenId of the property.
+     * @param minPrice Minimum bidding price.
+     */
+    function acceptBid(
+        uint32 tokenId,
+        uint256 minPrice
+    ) external whenNotPaused {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
             address seller = msg.sender;
-            Bid memory bid = bids[id];
+            Bid memory bid = bids[tokenId];
             uint256 amount = bid.value;
-            require(amount != 0, "cannot enter bid of zero");
+            require(amount != 0, "Cannot enter bid of zero");
             require(amount >= minPrice, "the bid is too low");
 
             address bidder = bid.bidder;
-            require(seller != bidder, "you already own this token");
-            offers[id] = Offer(false, id, bidder, 0, address(0x0));
-            bids[id] = Bid(id, address(0x0), 0);
+            require(seller != bidder, "You already own this token");
+            offers[tokenId] = Offer(tokenId, bidder, 0, address(0x0));
+            bids[tokenId] = Bid(address(0x0), 0);
 
-            // Transfer MLIFE to  Bidder
-            mLife.transferFrom(msg.sender, bidder, id);
+            /// Transfer MLIFE to  Bidder
+            mLife.transferFrom(msg.sender, bidder, tokenId);
 
             uint256 commission = 0;
-            // Transfer Commission!
+            /// Transfering commission fee to admin wallet
             if (adminPercent > 0) {
                 commission = (amount * adminPercent) / PERCENTS_DIVIDER;
                 adminPending += commission;
             }
 
-            // Transfer ETH to seller!
+            /// Transfer ETH to seller
             _safeTransferETH(seller, amount - commission);
 
-            emit Bought(id, bid.value, seller, bidder, false);
+            emit Bought(tokenId, bid.value, seller, bidder, false);
         } else {
             require(
-                msg.sender == mLife.ownerOf(id),
+                msg.sender == mLife.ownerOf(tokenId),
                 "Only for the MLIFE owner"
             );
 
             address seller = msg.sender;
-            Bid memory bid = bids[id];
+            Bid memory bid = bids[tokenId];
             uint256 amount = bid.value;
-            require(amount != 0, "cannot enter bid of zero");
-            require(amount >= minPrice, "the bid is too low");
+            require(amount != 0, "Cannot enter bid of zero");
+            require(amount >= minPrice, "The bid is too low");
 
             address bidder = bid.bidder;
-            require(seller != bidder, "you already own this token");
-            offers[id] = Offer(false, id, bidder, 0, address(0x0));
-            bids[id] = Bid(id, address(0x0), 0);
+            require(seller != bidder, "You already own this token");
+            offers[tokenId] = Offer(tokenId, bidder, 0, address(0x0));
+            bids[tokenId] = Bid(address(0x0), 0);
 
-            // Transfer MLIFE to  Bidder
-            mLife.transferFrom(msg.sender, bidder, id);
+            /// Transfer MLIFE NFT to the Bidder
+            mLife.transferFrom(msg.sender, bidder, tokenId);
 
             uint256 commission = 0;
-            // Transfer Commission!
+            /// Transfer Commission to admin wallet
             if (adminPercent > 0) {
                 commission = (amount * adminPercent) / PERCENTS_DIVIDER;
                 adminPending += commission;
             }
 
-            // Transfer ETH to seller!
+            /// Transfer ETH to seller
             _safeTransferETH(seller, amount - commission);
 
-            emit Bought(id, bid.value, seller, bidder, false);
+            emit Bought(tokenId, bid.value, seller, bidder, false);
         }
     }
 
     /* Allows bidders to withdraw their bids */
-    function withdrawBid(uint32 id) external nonReentrant {
+    /**
+     * @notice Allows bidders to withdraw their bid on a specific property.
+     *
+     * @dev There will be different process flows on this function depending
+     * on the value of `allowTrading`. By default, the entire trading will be
+     * facilitated by the admin wallet.
+     *
+     * @param tokenId tokenId of the property that is currently being bid.
+     */
+    function withdrawBid(uint32 tokenId) external nonReentrant {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
                 "Trading is disabled at this moment, only Admin can trade"
             );
 
-            Bid memory bid = bids[id];
+            Bid memory bid = bids[tokenId];
             uint256 amount = bid.value;
-            emit BidWithdrawn(id, amount);
-            bids[id] = Bid(id, address(0x0), 0);
+            emit BidWithdrawn(tokenId, amount);
+            bids[tokenId] = Bid(address(0x0), 0);
             _safeTransferETH(msg.sender, amount);
         } else {
             require(
-                msg.sender == mLife.ownerOf(id),
+                msg.sender == mLife.ownerOf(tokenId),
                 "Only for the MLIFE owner"
             );
-            Bid memory bid = bids[id];
+            Bid memory bid = bids[tokenId];
             require(
                 bid.bidder == msg.sender,
                 "The Sender is not original bidder"
             );
             uint256 amount = bid.value;
-            emit BidWithdrawn(id, amount);
-            bids[id] = Bid(id, address(0x0), 0);
+            emit BidWithdrawn(tokenId, amount);
+            bids[tokenId] = Bid(address(0x0), 0);
             _safeTransferETH(msg.sender, amount);
         }
     }
 
-    // TODO: Address this empty receive function by building a record keeping routines
-    receive() external payable {}
+    /**
+     * @dev This records the address and ether value that was sent to the Marketplace
+     */
+    receive() external payable {
+        emit Received(msg.sender, msg.value);
+    }
 
+    /// @dev Eth transfer hook
     function _safeTransferETH(address to, uint256 value) internal {
         (bool success, ) = to.call{value: value}("");
         require(
@@ -423,10 +523,20 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         );
     }
 
+    /**
+     * @notice Allow admins to set new ML Admin wallet.
+     * Only contract owner/deployer can execute this function
+     *
+     * @param newAdminAddress New wallet address to be used.
+     */
     function setMLAdmin(address newAdminAddress) external onlyOwner {
         mlAdmin = newAdminAddress;
     }
 
+    /**
+     * @notice Modifier to make sure only MLIFE
+     * NFT holders can run a specific functions.
+     */
     modifier onlyMLifeOwner(uint256 tokenId) {
         require(
             msg.sender == mLife.ownerOf(tokenId),
@@ -435,12 +545,18 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         _;
     }
 
-    /*** @notice Modifier to make sure only ML Admin can perform tradings on behalf of users if `allowTrading` == false  */
+    /**
+     * @notice Modifier to make sure only admin wallet can perform
+     * market tradings on behalf of all users.
+     *
+     * @dev `allowTrading` should be set to `true` in order for the users to facilitate the
+     * market trading by themselves.
+     */
     modifier isTradingAllowed() {
         if (allowTrading == false) {
             require(
                 msg.sender == mlAdmin,
-                "Trading is disabled at this moment, only Admin can trade"
+                "Trading is disabled, only Admin can trade."
             );
             _;
         }
