@@ -203,7 +203,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      * @param tokenId TokenId of the NFT, will be used as param in access modifier.
      */
     function burnTokens(uint256 amount, uint256 tokenId) external {
-        lifeToken.burnLifeTokens(msg.sender, amount, tokenId);
+        lifeToken.burnLifeTokens(amount, tokenId);
         emit TokenBurned(msg.sender, amount);
     }
 

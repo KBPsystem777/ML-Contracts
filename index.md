@@ -185,7 +185,7 @@ Rewards = Current timestamp - StartOfStake timestamp * Life token issuance rate.
 ### burnLifeTokens
 
 ```solidity
-function burnLifeTokens(address from, uint256 amount, uint256 tokenId) external
+function burnLifeTokens(uint256 amount, uint256 tokenId) external
 ```
 
 Burns $LIFE token from a sender's account.
@@ -194,7 +194,6 @@ Burns $LIFE token from a sender's account.
 
 | Name | Type | Description |
 | ---- | ---- | ----------- |
-| from | address | Address to where to burn LIFE tokens from. |
 | amount | uint256 | Amount to burn. |
 | tokenId | uint256 | TokenID of the NFT. This will be used as a param for access modifier. |
 
