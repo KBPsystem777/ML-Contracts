@@ -163,7 +163,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         initStakingRewards(tokenId);
     }
 
-    // @notice Function to check the claimable staking reward of an NFT
+    /// @notice Function to check the claimable staking reward of an NFT
     function checkClaimableStakingRewards(
         uint256 tokenId
     ) public view returns (uint256) {
@@ -232,10 +232,12 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
                 block.timestamp >= unlockDate[tokenId],
                 "Error: NFT hasn't finished locked up period"
             );
-            // If the NFT has a pending reward, it should be claimed first before transferring
-            if (checkClaimableStakingRewards(tokenId) >= 0) {
-                claimStakingRewards(tokenId);
-            }
+            /// @dev If the NFT has a pending reward greater than 100 $LIFE tokens, it should be claimed first before transferring
+            require(
+                checkClaimableStakingRewards(tokenId) > 100,
+                "Has claimable reward"
+            );
+
             safeTransferFrom(msg.sender, to, tokenId);
         }
 
