@@ -46,7 +46,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     function _baseURI() internal pure override returns (string memory) {
-        return "https://ml-api-dev.herokuapp.com/api/v1/nfts/";
+        return "https://iweb3api.managelifeapi.co/api/v1/nfts/";
     }
 
     /**
