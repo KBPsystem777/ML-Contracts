@@ -500,6 +500,8 @@ by admin wallet._
 function checkClaimableStakingRewards(uint256 tokenId) public view returns (uint256)
 ```
 
+Function to check the claimable staking reward of an NFT
+
 ### claimStakingRewards
 
 ```solidity
