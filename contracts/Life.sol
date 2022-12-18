@@ -151,16 +151,14 @@ contract Life is ERC20, Ownable, Pausable {
 
     /**
      * @notice Burns $LIFE token from a sender's account.
-     * @param from Address to where to burn LIFE tokens from.
      * @param amount Amount to burn.
      * @param tokenId TokenID of the NFT. This will be used as a param for access modifier.
      */
     function burnLifeTokens(
-        address from,
         uint256 amount,
         uint256 tokenId
     ) external onlyMembers(tokenId) {
-        _burn(from, amount);
+        _burn(msg.sender, amount);
     }
 
     /**
