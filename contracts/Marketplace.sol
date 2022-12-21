@@ -149,11 +149,18 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
 
     /**
      * @notice Cancel and existing sale offer.
+     *
      * @dev Once triggered, the offer struct for this tokenId will be destroyed.
-     * Can only be called by MLIFE holders.
+     * Can only be called by MLIFE holders. The caller of this function should be
+     * the owner if the NFT in MLIFE contract.
+     *
      * @param tokenId TokenId of the NFT.
      */
-    function cancelForSale(uint32 tokenId) external onlyMLifeOwner(tokenId) {
+    function cancelForSale(uint32 tokenId) external onlyMLifeOwner {
+        require(
+            msg.sender == mLife.ownerOf(tokenId),
+            "You are not the owner of this token"
+        );
         delete offers[tokenId];
         emit Cancelled(tokenId);
     }
@@ -187,7 +194,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         } else {
             require(
                 msg.sender == mLife.ownerOf(tokenId),
-                "Only for the MLIFE owner"
+                "You do not own this MLIFE"
             );
             offers[tokenId] = Offer(
                 tokenId,
@@ -229,7 +236,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         } else {
             require(
                 msg.sender == mLife.ownerOf(tokenId),
-                "Only for the MLIFE owner"
+                "You do not own this MLIFE"
             );
             offers[tokenId] = Offer(
                 tokenId,
@@ -297,11 +304,6 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
                 bids[tokenId] = Bid(address(0x0), 0);
             }
         } else {
-            require(
-                msg.sender == mLife.ownerOf(tokenId),
-                "Only for the MLIFE owner"
-            );
-
             Offer memory offer = offers[tokenId];
             uint256 amount = msg.value;
             require(
@@ -373,15 +375,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             bids[tokenId] = Bid(msg.sender, msg.value);
             emit BidEntered(tokenId, msg.value, msg.sender);
         } else {
-            require(
-                msg.sender == mLife.ownerOf(tokenId),
-                "Only for the MLIFE owner"
-            );
-
-            require(
-                mLife.ownerOf(tokenId) != msg.sender,
-                "You already own this MLIFE"
-            );
+            require(mLife.balanceOf(msg.sender) >= 1, "Only for MLIFE owners");
             require(msg.value != 0, "Cannot enter bid of zero");
             Bid memory existing = bids[tokenId];
             require(msg.value > existing.value, "Your bid is too low");
@@ -437,9 +431,8 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         } else {
             require(
                 msg.sender == mLife.ownerOf(tokenId),
-                "Only for the MLIFE owner"
+                "You do not own this MLIFE"
             );
-
             address seller = msg.sender;
             Bid memory bid = bids[tokenId];
             uint256 amount = bid.value;
@@ -468,7 +461,6 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         }
     }
 
-    /* Allows bidders to withdraw their bids */
     /**
      * @notice Allows bidders to withdraw their bid on a specific property.
      *
@@ -491,10 +483,6 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             bids[tokenId] = Bid(address(0x0), 0);
             _safeTransferETH(msg.sender, amount);
         } else {
-            require(
-                msg.sender == mLife.ownerOf(tokenId),
-                "Only for the MLIFE owner"
-            );
             Bid memory bid = bids[tokenId];
             require(
                 bid.bidder == msg.sender,
@@ -537,11 +525,8 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
      * @notice Modifier to make sure only MLIFE
      * NFT holders can run a specific functions.
      */
-    modifier onlyMLifeOwner(uint256 tokenId) {
-        require(
-            msg.sender == mLife.ownerOf(tokenId),
-            "Only for the MLIFE owner"
-        );
+    modifier onlyMLifeOwner() {
+        require(mLife.balanceOf(msg.sender) >= 0, "Only for the MLIFE owner");
         _;
     }
 
