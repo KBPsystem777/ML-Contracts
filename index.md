@@ -1180,7 +1180,8 @@ function cancelForSale(uint32 tokenId) external
 Cancel and existing sale offer.
 
 _Once triggered, the offer struct for this tokenId will be destroyed.
-Can only be called by MLIFE holders._
+Can only be called by MLIFE holders. The caller of this function should be
+the owner if the NFT in MLIFE contract._
 
 #### Parameters
 
@@ -1330,7 +1331,7 @@ Only contract owner/deployer can execute this function
 ### onlyMLifeOwner
 
 ```solidity
-modifier onlyMLifeOwner(uint256 tokenId)
+modifier onlyMLifeOwner()
 ```
 
 Modifier to make sure only MLIFE
