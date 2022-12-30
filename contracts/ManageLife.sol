@@ -29,8 +29,8 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     /// Mapping to get the issuance rate of a tokenId (propery).
     mapping(uint256 => uint256) public lifeTokenIssuanceRate;
 
-    /// Mapping to check the payment status of a tokenId.
-    mapping(uint256 => bool) private _fullyPaid;
+    /// @notice Mapping to check the payment status of a tokenId.
+    mapping(uint256 => bool) public fullyPaid;
 
     event FullyPaid(uint256 tokenId);
     event StakingInitialized(uint256 tokenId);
@@ -45,17 +45,20 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         PROPERTY_CUSTODIAN = msg.sender;
     }
 
-    function _baseURI() internal pure override returns (string memory) {
-        return "https://iweb3api.managelifeapi.co/api/v1/nfts/";
+    /// @notice Public base URI of ML's NFTs
+    string public baseUri = "https://iweb3api.managelifeapi.co/api/v1/nfts/";
+
+    function _baseURI() internal view virtual override returns (string memory) {
+        return baseUri;
     }
 
     /**
-     * @notice Return the base URI of NFT metadata.
-     * @dev Returns the API address where the metadata are stored.
-     * @return  string
+     * @notice Function to change the base URI of the NFTs.
+     * @dev Giving the ML Admins an options in the future to change the URI of NFTs.
+     * @param newBaseUri New URI string.
      */
-    function baseURI() external pure returns (string memory) {
-        return _baseURI();
+    function setBaseURI(string memory newBaseUri) external onlyOwner {
+        baseUri = newBaseUri;
     }
 
     /**
@@ -77,21 +80,12 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     /**
-     * @notice Function to check if a property (NFT) is fully paid from mortgages at ML.
-     * @param tokenId TokenId of the NFT property to be checked.
-     * @return  bool - will return true/false.
-     */
-    function fullyPaid(uint256 tokenId) public view returns (bool) {
-        return _fullyPaid[tokenId];
-    }
-
-    /**
      * @notice Mark an NFT or property fully paid from all mortgages at ML.
      * @dev This can only be executed by the contract deployer or admin wallet.
      * @param tokenId TokenId of the NFT.
      */
     function markFullyPaid(uint256 tokenId) external onlyOwner {
-        _fullyPaid[tokenId] = true;
+        fullyPaid[tokenId] = true;
 
         /// @notice Staking for this property will be initialized if this is not owned by admin wallet.
         if (owner() != ownerOf(tokenId)) {
@@ -168,7 +162,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      */
     function approve(address to, uint256 tokenId) public override {
         require(
-            fullyPaid(tokenId) ||
+            fullyPaid[tokenId] ||
                 ownerOf(tokenId) == owner() ||
                 to == address(marketplace),
             "Approval restricted"
@@ -197,13 +191,13 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         uint256 tokenId
     ) internal override {
         require(
-            fullyPaid(tokenId) ||
+            fullyPaid[tokenId] ||
                 from == owner() ||
                 to == owner() ||
                 msg.sender == address(marketplace),
             "Transfers restricted"
         );
-        if (!fullyPaid(tokenId)) {
+        if (!fullyPaid[tokenId]) {
             /// @dev If the sender of the NFT is contract owner, staking will be initiated.
             if (from == owner()) {
                 lifeToken.initStakingRewards(tokenId);

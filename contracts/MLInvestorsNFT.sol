@@ -28,6 +28,9 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     /// Mapping of NFTi tokenId to their unlock dates
     mapping(uint256 => uint256) public unlockDate;
 
+    /// @notice Public base URI of ML's NFTs
+    string public baseUri = "https://iweb3api.managelifeapi.co/api/v1/nfts/";
+
     event BaseURIUpdated(string _newURIAddress);
     event StakingClaimed(uint256 tokenId);
     event TokenBurned(address indexed burnFrom, uint256 amount);
@@ -49,21 +52,17 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         _safeMint(msg.sender, quantity);
     }
 
-    /**
-     * @notice Setting the baseURI of NFTi metadata.
-     * @return  string
-     */
-    function _baseURI() internal pure override returns (string memory) {
-        return "https://iweb3api.managelifeapi.co/api/v1/nfts/";
+    function _baseURI() internal view virtual override returns (string memory) {
+        return baseUri;
     }
 
     /**
-     * @notice Query the baseURI of NFTi
-     * @dev Will return the API address where the metadata are stored.
-     * @return  string
+     * @notice Function to change the base URI of the NFTs.
+     * @dev Giving the ML Admins an options in the future to change the URI of NFTs.
+     * @param newBaseUri New URI string.
      */
-    function baseURI() external pure returns (string memory) {
-        return _baseURI();
+    function setBaseURI(string memory newBaseUri) external onlyOwner {
+        baseUri = newBaseUri;
     }
 
     /**

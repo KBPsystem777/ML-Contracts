@@ -310,6 +310,14 @@ mapping(uint256 => uint256) unlockDate
 
 Mapping of NFTi tokenId to their unlock dates
 
+### baseUri
+
+```solidity
+string baseUri
+```
+
+Public base URI of ML's NFTs
+
 ### BaseURIUpdated
 
 ```solidity
@@ -369,32 +377,28 @@ Mint new NFTis.
 ### _baseURI
 
 ```solidity
-function _baseURI() internal pure returns (string)
+function _baseURI() internal view virtual returns (string)
 ```
 
-Setting the baseURI of NFTi metadata.
+_Base URI for computing {tokenURI}. If set, the resulting URI for each
+token will be the concatenation of the `baseURI` and the `tokenId`. Empty
+by default, it can be overridden in child contracts._
 
-#### Return Values
-
-| Name | Type | Description |
-| ---- | ---- | ----------- |
-| [0] | string | string |
-
-### baseURI
+### setBaseURI
 
 ```solidity
-function baseURI() external pure returns (string)
+function setBaseURI(string newBaseUri) external
 ```
 
-Query the baseURI of NFTi
+Function to change the base URI of the NFTs.
 
-_Will return the API address where the metadata are stored._
+_Giving the ML Admins an options in the future to change the URI of NFTs._
 
-#### Return Values
+#### Parameters
 
 | Name | Type | Description |
 | ---- | ---- | ----------- |
-| [0] | string | string |
+| newBaseUri | string | New URI string. |
 
 ### setLifeToken
 
@@ -639,10 +643,10 @@ mapping(uint256 => uint256) lifeTokenIssuanceRate
 
 Mapping to get the issuance rate of a tokenId (propery).
 
-### _fullyPaid
+### fullyPaid
 
 ```solidity
-mapping(uint256 => bool) _fullyPaid
+mapping(uint256 => bool) fullyPaid
 ```
 
 Mapping to check the payment status of a tokenId.
@@ -683,31 +687,39 @@ event TokenIssuanceRateUpdated(uint256 token, uint256 newLifeTokenIssuanceRate)
 constructor() public
 ```
 
+### baseUri
+
+```solidity
+string baseUri
+```
+
+Public base URI of ML's NFTs
+
 ### _baseURI
 
 ```solidity
-function _baseURI() internal pure returns (string)
+function _baseURI() internal view virtual returns (string)
 ```
 
 _Base URI for computing {tokenURI}. If set, the resulting URI for each
 token will be the concatenation of the `baseURI` and the `tokenId`. Empty
 by default, can be overridden in child contracts._
 
-### baseURI
+### setBaseURI
 
 ```solidity
-function baseURI() external pure returns (string)
+function setBaseURI(string newBaseUri) external
 ```
 
-Return the base URI of NFT metadata.
+Function to change the base URI of the NFTs.
 
-_Returns the API address where the metadata are stored._
+_Giving the ML Admins an options in the future to change the URI of NFTs._
 
-#### Return Values
+#### Parameters
 
 | Name | Type | Description |
 | ---- | ---- | ----------- |
-| [0] | string | string |
+| newBaseUri | string | New URI string. |
 
 ### setMarketplace
 
@@ -740,26 +752,6 @@ _Very important to set this after contract deployment._
 | Name | Type | Description |
 | ---- | ---- | ----------- |
 | lifeToken_ | address | Address of the $LIFE token contract. |
-
-### fullyPaid
-
-```solidity
-function fullyPaid(uint256 tokenId) public view returns (bool)
-```
-
-Function to check if a property (NFT) is fully paid from mortgages at ML.
-
-#### Parameters
-
-| Name | Type | Description |
-| ---- | ---- | ----------- |
-| tokenId | uint256 | TokenId of the NFT property to be checked. |
-
-#### Return Values
-
-| Name | Type | Description |
-| ---- | ---- | ----------- |
-| [0] | bool | bool - will return true/false. |
 
 ### markFullyPaid
 
