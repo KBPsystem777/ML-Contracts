@@ -9,10 +9,10 @@ import "./Life.sol";
 import "./Marketplace.sol";
 
 /**
- * @notice NFT (ERC-721) contract for ManageLife Homeowners.
- * An NFT represents a property or home ownership in real life.
+ * @notice ManageLife Member NFT (ERC-721) contract for ManageLife Members.
+ * An NFT represents a membership or home ownership in real life.
  * Properties are all being managed by ManageLife.
- * NFT Symbol: MLIFE
+ * NFT Symbol: MLRE
  *
  * @author https://managelife.co
  */
@@ -20,13 +20,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     Life public lifeToken;
     Marketplace public marketplace;
 
-    /**
-     * @notice This is the wallet address where all property NFTs will be
-     * stored as soon as the property got vacated or returned to ML.
-     */
-    address public PROPERTY_CUSTODIAN;
-
-    /// Mapping to get the issuance rate of a tokenId (propery).
+    /// @notice Mapping to get the issuance rate of a tokenId (propery).
     mapping(uint256 => uint256) public lifeTokenIssuanceRate;
 
     /// @notice Mapping to check the payment status of a tokenId.
@@ -34,16 +28,13 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
 
     event FullyPaid(uint256 tokenId);
     event StakingInitialized(uint256 tokenId);
-    event PropertyReturned(address indexed from, uint256 tokenId);
-    event PropertyCustodianUpdated(address newPropertyCustodian);
     event TokenIssuanceRateUpdated(
         uint256 token,
         uint256 newLifeTokenIssuanceRate
     );
+    event BaseURIUpdated(string _newURIAddress);
 
-    constructor() ERC721("ManageLife", "MLIFE") {
-        PROPERTY_CUSTODIAN = msg.sender;
-    }
+    constructor() ERC721("ManageLife Member", "MLRE") {}
 
     /// @notice Public base URI of ML's NFTs
     string public baseUri = "https://iweb3api.managelifeapi.co/api/v1/nfts/";
@@ -59,6 +50,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      */
     function setBaseURI(string memory newBaseUri) external onlyOwner {
         baseUri = newBaseUri;
+        emit BaseURIUpdated(newBaseUri);
     }
 
     /**
@@ -71,9 +63,9 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     /**
-     * @notice Function to set the @LIFE token contract address.
+     * @notice Function to set the $MLIFE token contract address.
      * @dev Very important to set this after contract deployment.
-     * @param lifeToken_ Address of the $LIFE token contract.
+     * @param lifeToken_ Address of the $MLIFE token contract.
      */
     function setLifeToken(address lifeToken_) external onlyOwner {
         lifeToken = Life(lifeToken_);
@@ -89,7 +81,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
 
         /// @notice Staking for this property will be initialized if this is not owned by admin wallet.
         if (owner() != ownerOf(tokenId)) {
-            lifeToken.claimStakingRewards(tokenId);
+            lifeToken.initStakingRewards(tokenId);
         }
         emit FullyPaid(tokenId);
     }
@@ -101,7 +93,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      * Life token issuance rate will be populated by the web3 admin from the portal app.
      *
      * @param propertyId Property ID of the NFT. This will be provided by the FrontEnd app.
-     * @param lifeTokenIssuanceRate_ Issuance rate percentage that is based on morgage payments maintained by ML.
+     * @param lifeTokenIssuanceRate_ Issuance rate percentage that is based on mortgage payments maintained by ML.
      */
     function mint(
         uint256 propertyId,
@@ -126,7 +118,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     /**
      * @notice Admin wallet to retract a property (NFT) from a customer.
      * @dev Use case is the admin wallet needs to force claim an NFT from a customer.
-     * @param tokenId TokenId of the property that needs to be retrackted.
+     * @param tokenId TokenId of the property that needs to be retracted.
      */
     function retract(uint256 tokenId) external onlyOwner {
         _safeTransfer(ownerOf(tokenId), owner(), tokenId, "");
@@ -138,11 +130,8 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      * @param tokenId TokenId of the NFT to be returned.
      */
     function returnProperty(uint256 tokenId) external {
-        require(
-            msg.sender == ownerOf(tokenId),
-            "Transfer failed: You are not the owner of this property"
-        );
-        safeTransferFrom(msg.sender, PROPERTY_CUSTODIAN, tokenId, "");
+        require(msg.sender == ownerOf(tokenId), "Caller is not the owner");
+        safeTransferFrom(msg.sender, owner(), tokenId, "");
     }
 
     /**
@@ -246,20 +235,5 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         lifeToken.updateStartOfStaking(tokenId, uint64(block.timestamp));
 
         emit TokenIssuanceRateUpdated(tokenId, newLifeTokenIssuanceRate);
-    }
-
-    /**
-     * @notice Update the property custodian.
-     *
-     * @dev New address set here will be the new owner of all returned NFTs/properties.
-     * Will emit PropertyCustodianUpdated event.
-     *
-     * @param _newPropertyCustodian Wallet address of the new property custodian.
-     */
-    function updatePropertyCustodian(
-        address _newPropertyCustodian
-    ) external onlyOwner {
-        PROPERTY_CUSTODIAN = _newPropertyCustodian;
-        emit PropertyCustodianUpdated(_newPropertyCustodian);
     }
 }
