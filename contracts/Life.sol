@@ -9,7 +9,7 @@ import "./MLInvestorsNFT.sol";
 
 /**
  * @notice An ERC-20 contract for ManageLife.
- * Token Symbol: LIFE ($LIFE)
+ * Token Symbol: MLIFE ($MLIFE)
  * This contract manages token rewards issued to ManageLife homeowners and investors.
  * This contract also handles native token functions (EIP20 Token Standard).
  *
@@ -22,6 +22,9 @@ contract Life is ERC20, Ownable, Pausable {
      */
     mapping(uint256 => uint64) public startOfStakingRewards;
 
+    /// @notice Maximum token supply
+    uint256 public constant MAX_SUPPLY = 5000000000000000000000000000;
+
     /// Instance of the MLIFE NFT contract
     ManageLife private _manageLifeToken;
 
@@ -29,9 +32,12 @@ contract Life is ERC20, Ownable, Pausable {
     ManageLifeInvestorsNFT private _investorsNft;
 
     /// Set initial token supply before deploying.
-    constructor(uint256 initialSupply) ERC20("Life", "LIFE") {
-        _mint(msg.sender, initialSupply);
+    constructor() ERC20("ManageLife Token", "MLIFE") {
+        _mint(msg.sender, 2000000000000000000000000000);
     }
+
+    event StakingClaimed(address indexed claimaint, uint256 tokenId);
+    event TokensBurned(address indexed burnFrom, uint256 amount);
 
     /// @notice Security feature to Pause smart contracts transactions
     function pause() external whenNotPaused onlyOwner {
@@ -68,7 +74,7 @@ contract Life is ERC20, Ownable, Pausable {
     /**
      * @notice Return the MLIFE's contract address.
      * @dev If set, this will return the MLIFE contract address
-     * @return  address  .
+     * @return address
      */
     function manageLifeToken() external view returns (address) {
         return address(_manageLifeToken);
@@ -77,7 +83,7 @@ contract Life is ERC20, Ownable, Pausable {
     /**
      * @notice Return the NFTi's contract address.
      * @dev If set, this will return the NFTi contract address.
-     * @return  address  .
+     * @return  address
      */
     function manageLifeInvestorsNft() external view returns (address) {
         return address(_investorsNft);
@@ -96,7 +102,7 @@ contract Life is ERC20, Ownable, Pausable {
             address(_manageLifeToken) != address(0),
             "ManageLife token is not set"
         );
-        // Making sure the one who will trigger this function are only ManageLife NFT and NFTi contracts:
+        // Making sure the one who will trigger this function is only the ManageLife NFT contract.
         require(
             msg.sender == address(_manageLifeToken),
             "Only ManageLife token"
@@ -130,12 +136,12 @@ contract Life is ERC20, Ownable, Pausable {
     /**
      * @notice Returns the claimable $LIFE token of an NFT.
      *
-     * @dev MLIFE contract is dependent on this function in calculating
-     * the estimated staking rewards of an MLIFE.
+     * @dev MLifeNFT contract is dependent on this function in calculating
+     * the estimated staking rewards of an MLifeNFT.
      * Formula in calculating the reward:
      * Rewards = Current timestamp - StartOfStake timestamp * Life token issuance rate.
      *
-     * @param tokenId MLIFE's tokenId.
+     * @param tokenId MLifeNFT's tokenId.
      * @return uint256
      */
     function claimableStakingRewards(
@@ -150,92 +156,106 @@ contract Life is ERC20, Ownable, Pausable {
     }
 
     /**
-     * @notice Burns $LIFE token from a sender's account.
+     * @notice Burns $MLIFE token from a sender's account. Assuming that sender holds $MLIFE tokens.
      * @param amount Amount to burn.
-     * @param tokenId TokenID of the NFT. This will be used as a param for access modifier.
      */
-    function burnLifeTokens(
-        uint256 amount,
-        uint256 tokenId
-    ) external onlyMembers(tokenId) {
+    function burnLifeTokens(uint256 amount) external {
         _burn(msg.sender, amount);
+        emit TokensBurned(msg.sender, amount);
     }
 
     /**
      * @notice Function to mint additional token supply.
+     *
      * @dev Newly minted amount will be credited to the contract owner.
+     * Prevents minting of new tokens if 5B supply is reached.
+     *
      * @param _amount Additional amount to be minted.
      */
-    function mint(uint256 _amount) external onlyOwner {
+    function mint(uint256 _amount) external onlyOwner isMaxSupply(_amount) {
         _mint(msg.sender, _amount);
     }
 
     /**
-     * @notice Mint $LIFE token rewards for NFTi Investors.
+     * @notice Mint $MLIFE token rewards for NFTi Investors.
      *
-     * @dev NFTi contract depends on this function to mint $LIFE
+     * @dev MLifeNFTi contract depends on this function to mint $LIFE
      * token rewards to investors. Newly minted tokens here will be
      * credited directly to the investor's wallet address and NOT on the admin wallet.
+     * Minting new token supply if 5B LIFE token supply is reached.
      *
      * @param investorAddress Wallet address of the investor.
      * @param _amount Amount to be minted on the investor's address. Amount is based on the
-     * calculated staking rewards from NFTi contract.
+     * calculated staking rewards from MLifeNFTi contract.
      */
     function mintInvestorsRewards(
         address investorAddress,
         uint256 _amount
-    ) external {
+    ) external isMaxSupply(_amount) {
         _mint(investorAddress, _amount);
     }
 
     /**
-     * @notice Claim $LIFE token staking rewards.
+     * @notice Claim $MLIFE token staking rewards.
      *
-     * @dev MLIFE's rewards issuance is reliant on this function.
+     * @dev MLifeNFT's rewards issuance is reliant on this function.
      * Once the user claim the rewards, this function will mint the
      * tokens directly on the homeowner's wallet.
      * Notes:
      * - ML's admin or deployer wallet cannot claim $LIFE rewards.
-     * - Setting the MLIFE contract address is prerequisite in running this function.
-     * - This function can only be called by MLIFE holders.
+     * - Setting the MLifeNFT contract address is prerequisite in running this function.
+     * - This function can only be called by MLifeNFT holders.
      * - A percentage of the token reward will be burned. Percentage will be determined by the ML admin.
      * - Burn call will be handled separately by the frontend app.
      *
-     * @param tokenId MLIFE's tokenId.
+     * @param tokenId MLifeNFT's tokenId.
      */
     function claimStakingRewards(uint256 tokenId) public whenNotPaused {
+        /*** @notice Variable containers that holds the claimable amounts of the user. */
+        uint256 rewards = claimableStakingRewards(tokenId);
+
         require(
             address(_manageLifeToken) != address(0),
             "ManageLife token is not set"
         );
 
+        /// @dev Making sure that admin wallet will not own token rewards.
         require(
             _manageLifeToken.ownerOf(tokenId) != owner(),
-            "PlatformWallet cannot claim"
+            "Platform wallet cannot claim"
         );
 
-        if (
+        /// @dev Making sure that only admin and MLifeNFT owners will claim the rewards.
+        require(
             msg.sender == owner() ||
-            msg.sender == _manageLifeToken.ownerOf(tokenId) ||
-            msg.sender == address(_manageLifeToken)
-        ) {
-            /**
-             * @dev If the answer on the above questions are true,
-             * mint new ERC20 $LIFE tokens. Claimable amount will be minted on the property owner.
-             * At the same time, a percentage of the claimed reward will be burned
-             * which will be handled separately by the frontend app.
-             */
-            _mint(
-                _manageLifeToken.ownerOf(tokenId),
-                claimableStakingRewards(tokenId)
-            );
-        }
+                msg.sender == _manageLifeToken.ownerOf(tokenId) ||
+                msg.sender == address(_manageLifeToken),
+            "Unauthorized."
+        );
+
+        /// @dev Adding require check to comply with the maximum token supply.
+        require(totalSupply() + rewards <= MAX_SUPPLY, "$LIFE supply is maxed");
+
+        /**
+         * @dev If the answer on the above questions are true,
+         * mint new ERC20 $LIFE tokens. Claimable amount will be minted on the property owner.
+         * At the same time, a percentage of the claimed reward will be burned
+         * which will be handled separately by the frontend app.
+         */
+        _mint(_manageLifeToken.ownerOf(tokenId), rewards);
+
+        /**
+         * @dev Resetting the startOfStakingsRewards of the token to make
+         * sure their claimable rewards will reset as well.
+         */
+        startOfStakingRewards[tokenId] = uint64(block.timestamp);
+        emit StakingClaimed(msg.sender, rewards);
     }
 
     /**
      * @notice Custom access modifier to make sure that the caller of transactions are member of ML.
-     * @dev This identifies if the caller is an investor or NFTi holder.
-     * @param tokenId  TokenId of the NFT that needs to be checked.
+     * @dev This identifies if the caller is an MLifeNFT or MLifeNFTi holder.
+     * @param tokenId TokenId of the NFT that needs to be checked.
      */
     modifier onlyMembers(uint256 tokenId) {
         require(
@@ -243,6 +263,16 @@ contract Life is ERC20, Ownable, Pausable {
                 msg.sender == _investorsNft.ownerOf(tokenId),
             "Only NFT holders can execute this"
         );
+        _;
+    }
+
+    /**
+     * @notice Custom access modifier to make sure minting will not exceed.
+     * @dev This makes sure that the $MLIFE max supply is 5B.
+     * @param amount new amount to be minted.
+     */
+    modifier isMaxSupply(uint256 amount) {
+        require(totalSupply() + amount <= MAX_SUPPLY, "$LIFE supply is maxed");
         _;
     }
 }
