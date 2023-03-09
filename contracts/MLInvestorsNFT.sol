@@ -2,16 +2,15 @@
 pragma solidity ^0.8.17;
 
 import "erc721a/contracts/ERC721A.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 
 import "./Life.sol";
 
 /**
- * @notice NFTi (ERC-721) contract for ManageLife Investors.
+ * @notice ManageLife Investor (ERC-721) contract for ManageLife Investors.
  * Owning this NFT represents a investment in ManageLife's properties in real life.
- * NFT Symbol: NFTi
+ * NFT Symbol: MLifeNFTi
  *
  * @author https://managelife.co
  */
@@ -20,10 +19,10 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     Life public lifeToken;
 
     /// Mapping of NFTi tokenId to their issuance rates
-    mapping(uint256 => uint256) private _lifeTokenIssuanceRate;
+    mapping(uint256 => uint256) public lifeTokenIssuanceRate;
 
     /// Mapping of NFTi tokenId to their start of staking
-    mapping(uint256 => uint64) public stakingRewards;
+    mapping(uint256 => uint256) public startOfStaking;
 
     /// Mapping of NFTi tokenId to their unlock dates
     mapping(uint256 => uint256) public unlockDate;
@@ -32,7 +31,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     string public baseUri = "https://iweb3api.managelifeapi.co/api/v1/nfts/";
 
     event BaseURIUpdated(string _newURIAddress);
-    event StakingClaimed(uint256 tokenId);
+    event StakingClaimed(address indexed claimaint, uint256 tokenId);
     event TokenBurned(address indexed burnFrom, uint256 amount);
 
     event TokenIssuanceRateUpdates(
@@ -42,7 +41,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     event StakingInitiated(uint256 indexed tokenId);
     event BurnedNft(uint256 tokenId);
 
-    constructor() ERC721A("ManageLife Investors NFT", "NFTi") {}
+    constructor() ERC721A("ManageLife Investor", "MLifeNFTi") {}
 
     /**
      * @notice Mint new NFTis.
@@ -63,6 +62,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      */
     function setBaseURI(string memory newBaseUri) external onlyOwner {
         baseUri = newBaseUri;
+        emit BaseURIUpdated(newBaseUri);
     }
 
     /**
@@ -73,19 +73,6 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      */
     function setLifeToken(address lifeToken_) external onlyOwner {
         lifeToken = Life(lifeToken_);
-    }
-
-    /**
-     * @notice Query the life token issuance rate of an NFTi.
-     * @dev Default token issuance rate of NFTi is set by admins once the NFTi is
-     * issued to investor. Issuance rates varies per NFTi and is maintained by ML admins.
-     * @param   tokenId NFTi's tokenId.
-     * @return  uint256
-     */
-    function lifeTokenIssuanceRate(
-        uint256 tokenId
-    ) external view returns (uint256) {
-        return _lifeTokenIssuanceRate[tokenId];
     }
 
     /**
@@ -109,10 +96,10 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         );
 
         /// Resetting the start of stake to current time to halt the reward accumulation in the meantime.
-        stakingRewards[tokenId] = uint64(block.timestamp);
+        startOfStaking[tokenId] = uint256(block.timestamp);
 
         /// Once all rewards has been minted to the owner, reset the lifeTokenIssuance rate
-        _lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
+        lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
         emit TokenIssuanceRateUpdates(tokenId, newLifeTokenIssuanceRate);
     }
 
@@ -120,7 +107,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      * @notice Initialize the staking reward for an NFTi.
      *
      * @dev This will be triggered by the transfer hook and requires that
-     * the MLIFE contract should be set.
+     * the MLifeNTi contract should be set.
      *
      * @param tokenId TokenId of NFTi to be set.
      */
@@ -130,7 +117,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
             "ManageLife Token is not set"
         );
 
-        stakingRewards[tokenId] = uint64(block.timestamp);
+        startOfStaking[tokenId] = uint256(block.timestamp);
         emit StakingInitiated(tokenId);
     }
 
@@ -152,11 +139,11 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 tokenId,
         uint256 lifeTokenIssuanceRate_
     ) external onlyOwner {
-        _lifeTokenIssuanceRate[tokenId] = lifeTokenIssuanceRate_;
+        lifeTokenIssuanceRate[tokenId] = lifeTokenIssuanceRate_;
         safeTransferFrom(msg.sender, to, tokenId);
 
         /// Setting lock up dates to 365 days (12 months) as default.
-        unlockDate[tokenId] = uint64(block.timestamp) + 365 days;
+        unlockDate[tokenId] = uint256(block.timestamp) + 365 days;
 
         /// Initialiaze Staking.
         initStakingRewards(tokenId);
@@ -167,43 +154,33 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 tokenId
     ) public view returns (uint256) {
         return
-            (uint64(block.timestamp) - stakingRewards[tokenId]) *
-            _lifeTokenIssuanceRate[tokenId];
+            (uint256(block.timestamp) - startOfStaking[tokenId]) *
+            lifeTokenIssuanceRate[tokenId];
     }
 
     /**
      * @notice Claim $LIFE token staking rewards.
      *
      * @dev The rewards will be directly minted on the caller address.
-     * Once success, the timestamp of _stakingRewards for that tokenId will be reset.
+     * Once success, the timestamp of startOfStaking for that tokenId will be reset.
      *
      * @param tokenId TokenId of the NFT.
      */
     function claimStakingRewards(uint256 tokenId) public onlyInvestor(tokenId) {
         /// Making sure that ML wallet will not claim the reward
-        require(msg.sender != owner(), "Platform wallet cannot claim");
-
-        /// Mint the claimable $LIFE reward to the investor address.
-        lifeToken.mintInvestorsRewards(
-            msg.sender,
-            checkClaimableStakingRewards(tokenId)
+        require(
+            msg.sender != owner() && msg.sender != lifeToken.owner(),
+            "Platform wallet cannot claim"
         );
 
-        /// Record new timestamp data to reset the staking rewards data
-        stakingRewards[tokenId] = uint64(block.timestamp);
+        uint256 rewards = checkClaimableStakingRewards(tokenId);
 
-        emit StakingClaimed(tokenId);
-    }
+        /// Mint the claimable $LIFE reward to the investor address.
+        lifeToken.mintInvestorsRewards(msg.sender, rewards);
 
-    /**
-     * @notice Burn $LIFE token rewards from an NFTi holder.
-     * @dev Burn percentage if being managed from the frontend app.
-     * @param amount Calculated amount to be burned.
-     * @param tokenId TokenId of the NFT, will be used as param in access modifier.
-     */
-    function burnTokens(uint256 amount, uint256 tokenId) external {
-        lifeToken.burnLifeTokens(amount, tokenId);
-        emit TokenBurned(msg.sender, amount);
+        /// @notice Record new timestamp data to reset the staking rewards data
+        startOfStaking[tokenId] = uint256(block.timestamp);
+        emit StakingClaimed(msg.sender, tokenId);
     }
 
     /**
@@ -240,14 +217,14 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
             safeTransferFrom(msg.sender, to, tokenId);
         }
 
-        /// If the locked up period has been completed, reset the time to unlock of the said NFT to default 365 days
-        unlockDate[tokenId] = uint64(block.timestamp) + 365 days;
+        /// @dev If the locked up period has been completed, reset the time to unlock of the said NFT to default 365 days
+        unlockDate[tokenId] = uint256(block.timestamp) + 365 days;
     }
 
     /**
      * @notice Return the NFTi to ML wallet.
      *
-     * @dev Use case - The investment period has been completed for a specificc NFTi
+     * @dev Use case - The investment period has been completed for a specific NFTi
      * and the asset needs to be returned. The investor should also clear the lockup
      * period of the NFT so that the admins can transfer it to anyone at anytime. In
      * an event that the NFTi has a claimable reward during the execution of this
@@ -255,17 +232,13 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      *
      * @param tokenId NFTi's tokenId.
      */
-    function returnNftToML(uint256 tokenId) external {
-        require(
-            msg.sender == ownerOf(tokenId),
-            "Error: You must be the owner of this NFT"
-        );
+    function returnNftToML(uint256 tokenId) external onlyInvestor(tokenId) {
         /// If the NFT has a pending reward, it should be claimed first before transferring
         if (checkClaimableStakingRewards(tokenId) >= 0) {
             claimStakingRewards(tokenId);
         }
         /// Resetting the unlock date to remove the lock up period
-        unlockDate[tokenId] = block.timestamp;
+        unlockDate[tokenId] = uint256(block.timestamp);
         safeTransferFrom(msg.sender, owner(), tokenId);
     }
 
@@ -285,7 +258,8 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
      * @notice Function to burn an NFTi.
      *
      * @dev Use case of this is if the investor failed to return the NFTi to ML for
-     * certain period of time and circumstances, ML admin will burn the NFTi and replace it in circulation.
+     * certain period of time and any other circumstances.
+     * ML admin will burn the NFTi and replace it in circulation.
      * Another use-case is if the property has exited the ManageLife program.
      *
      * @param tokenId TokenId of an NFT
@@ -297,18 +271,53 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
 
     /***
      * @notice Function to brute force retrieving the NFTi from a holder
+     *
      * @param tokenId TokenId of an NFT
-     * Requirements:
-     *  - The holder of an NFT should give an approval for all (setApprovalForAll()) to the contract address,
+     *
+     * @dev Requirements:
+     *  - The holder of an NFT should give an approval for all (setApprovalForAll()) to the
+     * NFTi contract owner (ML Admin wallet),
      * in order for the function below to run successfully. This will be implemented on the frontend app.
      */
     function forceClaimNft(uint256 tokenId) external onlyOwner {
-        super.transferFrom(ownerOf(tokenId), msg.sender, tokenId);
+        safeTransferFrom(ownerOf(tokenId), msg.sender, tokenId);
     }
 
     /// @dev Modifier checks to see if the token holder is an NFTi investor
     modifier onlyInvestor(uint256 tokenId) {
-        require(msg.sender == ownerOf(tokenId), "Only for NFTIs owner");
+        require(
+            msg.sender == ownerOf(tokenId),
+            "Unauthorized. Only for direct NFTi owners."
+        );
         _;
+    }
+
+    /**
+     * @notice Hooks that is called whenever there is an NFT transfer transaction
+     *
+     * @dev If the receiver of the NFTi is not the ML wallet, this hook performs the following:
+     * - Checks if the NFTi has finished the locked up period. If not, transfers will not push.
+     * - Lastly, locks the NFTi transfer for the next 365 days.
+     *
+     * @param from Sender of the request.
+     * @param to Receiver of the NFTi.
+     * @param tokenId TokenID of the NFTi.
+     * @param quantity Required param which defaults to 1.
+     */
+    function _beforeTokenTransfers(
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 quantity
+    ) internal override {
+        if (to != owner()) {
+            require(
+                unlockDate[tokenId] < uint256(block.timestamp),
+                "NFTi is on lock-up period"
+            );
+        }
+
+        unlockDate[tokenId] = uint256(block.timestamp) + 365 days;
+        super._beforeTokenTransfers(from, to, tokenId, quantity);
     }
 }
