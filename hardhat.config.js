@@ -30,9 +30,21 @@ module.exports = {
       url: process.env.REACT_APP_GOERLI_URL,
       accounts: [process.env.REACT_APP_PRIVATE_KEY],
     },
+    sepolia: {
+      url: process.env.REACT_APP_SEPOLIA_URL,
+      accounts: [process.env.REACT_APP_PRIVATE_KEY],
+    },
+    mainnet: {
+      url: process.env.REACT_APP_ETH_URL,
+      accounts: [process.env.REACT_APP_PRIVATE_KEY],
+    },
+    polygon: {
+      url: process.env.REACT_APP_POLYGON_URL,
+      accounts: [process.env.REACT_APP_PRIVATE_KEY],
+    },
   },
   etherscan: {
-    // apiKey: process.env.REACT_APP_POLYGONSCAN_KEY, // Change if changing networks
+    //apiKey: process.env.REACT_APP_POLYGONSCAN_KEY, // Change if changing networks
     apiKey: process.env.REACT_APP_ETHERSCAN_KEY,
   },
 }
