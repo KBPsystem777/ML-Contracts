@@ -6,9 +6,11 @@ Smart contracts for ManageLife Blockchain
 
 **0x1fcb2d8e0420fd4da92979446ab247bbaa5a958a**
 
-Checkout https://app.clickup.com/8626173/v/dc/877zx-14165/877zx-14505 for details in importing the developer wallet to your local machine/device
+## Decentralized Marketplace
 
-## Contract addresses - Goerli Testnet
+https://market.managelife.io
+
+## Contract addresses - Mainnet
 
 Life Token: https://etherscan.io/address/0x113361a5ca06a36b63646d6ab076f3d040970c97
 
