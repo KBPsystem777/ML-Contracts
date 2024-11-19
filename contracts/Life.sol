@@ -13,7 +13,7 @@ import "./MLInvestorsNFT.sol";
  * This contract manages token rewards issued to ManageLife homeowners and investors.
  * This contract also handles native token functions (EIP20 Token Standard).
  *
- * @author https://managelife.co
+ * @author https://managelife.io
  */
 contract Life is ERC20, Ownable, Pausable {
     /**
@@ -24,6 +24,8 @@ contract Life is ERC20, Ownable, Pausable {
 
     /// @notice Maximum token supply
     uint256 public constant MAX_SUPPLY = 5000000000000000000000000000;
+
+    uint256 public totalMinted = 0;
 
     /// Instance of the MLIFE NFT contract
     ManageLife private _manageLifeToken;
@@ -38,6 +40,7 @@ contract Life is ERC20, Ownable, Pausable {
 
     event StakingClaimed(address indexed claimaint, uint256 tokenId);
     event TokensBurned(address indexed burnFrom, uint256 amount);
+    event Supplyminted(address indexed recipient, uint256 amount);
 
     /// @notice Security feature to Pause smart contracts transactions
     function pause() external whenNotPaused onlyOwner {
@@ -72,8 +75,8 @@ contract Life is ERC20, Ownable, Pausable {
     }
 
     /**
-     * @notice Return the MLIFE's contract address.
-     * @dev If set, this will return the MLIFE contract address
+     * @notice Return the MLIFE's NFT contract address.
+     * @dev If set, this will return the MLIFE NFT contract address
      * @return address
      */
     function manageLifeToken() external view returns (address) {
@@ -182,17 +185,16 @@ contract Life is ERC20, Ownable, Pausable {
      * @dev MLifeNFTi contract depends on this function to mint $LIFE
      * token rewards to investors. Newly minted tokens here will be
      * credited directly to the investor's wallet address and NOT on the admin wallet.
-     * Minting new token supply if 5B LIFE token supply is reached.
+     * Will only mint new token supply if 5B max $MLIFE token supply is not yet reached.
      *
-     * @param investorAddress Wallet address of the investor.
      * @param _amount Amount to be minted on the investor's address. Amount is based on the
      * calculated staking rewards from MLifeNFTi contract.
      */
     function mintInvestorsRewards(
-        address investorAddress,
-        uint256 _amount
-    ) external isMaxSupply(_amount) {
-        _mint(investorAddress, _amount);
+        uint256 _amount,
+        uint256 _tokenId
+    ) external isMaxSupply(_amount) onlyMembers(_tokenId) {
+        _mint(msg.sender, _amount);
     }
 
     /**
@@ -274,5 +276,11 @@ contract Life is ERC20, Ownable, Pausable {
     modifier isMaxSupply(uint256 amount) {
         require(totalSupply() + amount <= MAX_SUPPLY, "$LIFE supply is maxed");
         _;
+    }
+
+    function _mint(address _account, uint256 _amount) internal override {
+        totalMinted += _amount; // Update the totalMinted variable
+        super._mint(_account, _amount);
+        emit Supplyminted(_account, _amount);
     }
 }
