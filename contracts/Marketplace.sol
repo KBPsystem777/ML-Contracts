@@ -12,7 +12,7 @@ import "./ManageLife.sol";
  * In real life, an NFT here represents a home or real-estate property
  * run by ManageLife.
  *
- * @author https://managelife.co
+ * @author https://managelife.io
  */
 contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     /// @notice Deployer address will be considered as the ML admins
@@ -56,6 +56,9 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     /// Mapping of MLRE tokenIds to Bids
     mapping(uint256 => Bid) public bids;
 
+    /// Mapping for pending refunds
+    mapping(address => uint256) public pendingRefunds;
+
     event Offered(
         uint256 indexed tokenId,
         uint256 price,
@@ -85,6 +88,9 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     event Cancelled(uint256 indexed tokenId);
     event TradingStatus(bool _isTradingAllowed);
     event Received(address, uint);
+    event PendingRefund(address indexed bidder, uint256 refundAmount);
+    event RefundSent(address indexed bidder, uint256 refundAmount);
+    event AdminWithdrawal(uint256 amount);
 
     error InvalidPercent(uint256 _percent, uint256 minimumPercent);
 
@@ -132,7 +138,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @notice Withdraw marketplace earnings.
+     * @notice Withdrawalof marketplace earnings by the Admin.
      * @dev Can only be triggered by the admin wallet or contract owner.
      * This will transfer the market earnings to the admin wallet.
      */
@@ -140,6 +146,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         uint256 amount = adminPending;
         adminPending = 0;
         _safeTransferETH(owner(), amount);
+        emit AdminWithdrawal(amount);
     }
 
     /**
@@ -205,7 +212,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
      */
     function buy(
         uint256 tokenId
-    ) external payable whenNotPaused isTradingAllowed {
+    ) external payable whenNotPaused isTradingAllowed nonReentrant {
         Offer memory offer = offers[tokenId];
         require(
             offer.offeredTo == address(0x0) || offer.offeredTo == msg.sender,
@@ -213,39 +220,44 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         );
 
         uint256 amount = msg.value;
-        require(amount == offer.price, "Not enough ether");
+        require(
+            amount == offer.price && offer.price > 0,
+            "Invalid ether amount"
+        );
         address seller = offer.seller;
-        require(seller != msg.sender, "Seller == msg.sender");
+        require(seller != msg.sender, "Seller cannot be buyer");
 
-        offers[tokenId] = Offer(tokenId, msg.sender, 0, address(0x0));
+        // Deleting the offers mapping once sell is confirmed
+        delete offers[tokenId];
 
-        /// Transfer to msg.sender from seller.
-        mLife.transferFrom(seller, msg.sender, tokenId);
+        // Transfer NFT using safeTransferFrom in order to accommodate
+        // transfers for both EOAs and Contract Accounts
+        mLife.safeTransferFrom(seller, msg.sender, tokenId);
 
-        /// Transfer commission to admin!
+        // Calculate and allocate commission
         uint256 commission = 0;
         if (adminPercent > 0) {
             commission = (amount * adminPercent) / PERCENTS_DIVIDER;
             adminPending += commission;
         }
 
-        /// Transfer ETH to seller!
+        // Transfer ether to seller minus commission
         _safeTransferETH(seller, amount - commission);
 
         emit Bought(tokenId, amount, seller, msg.sender, true);
 
-        /// Refund bid if new owner is buyer
+        // Handle bid cancellation if buyer was also highest bidder
         Bid memory bid = bids[tokenId];
         if (bid.bidder == msg.sender) {
+            delete bids[tokenId];
             _safeTransferETH(bid.bidder, bid.value);
             emit BidCancelled(tokenId, bid.value, bid.bidder);
-            bids[tokenId] = Bid(address(0x0), 0);
         }
     }
 
     /**
      * @notice Allows users to submit a bid to any offered properties.
-     * @dev Anyone in public can submit a bid on a property, either MLRE holder of not.
+     * @dev Anyone in public can submit a bid on a property, either MLRE and NFTi holders of not.
      * @param tokenId tokenId of the property.
      */
     function placeBid(
@@ -254,12 +266,15 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         require(msg.value != 0, "Cannot enter bid of zero");
         Bid memory existing = bids[tokenId];
         require(msg.value > existing.value, "Your bid is too low");
+
+        // Handle refund for the previous bidder
         if (existing.value > 0) {
-            /// @dev If there is a new bid on a property and the last one got out bids, that previous one's
-            /// Ether sent to the contract will be refunded to their wallet.
-            _safeTransferETH(existing.bidder, existing.value);
+            // Update the pending refunds mapping
+            pendingRefunds[existing.bidder] += existing.value;
             emit BidCancelled(tokenId, existing.value, existing.bidder);
+            emit PendingRefund(existing.bidder, existing.value);
         }
+        // Record the new bid
         bids[tokenId] = Bid(msg.sender, msg.value);
         emit BidEntered(tokenId, msg.value, msg.sender);
     }
@@ -334,6 +349,20 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             success,
             "Address: unable to send value, recipient may have reverted"
         );
+    }
+
+    function withdrawRefunds() external nonReentrant {
+        uint256 refund = pendingRefunds[msg.sender];
+        require(refund > 0, "No refunds available");
+
+        // Reset the refund balance before transferring the amount
+        pendingRefunds[msg.sender] = 0;
+
+        emit RefundSent(msg.sender, refund);
+
+        // Transfer the balance to the caller
+        (bool success, ) = msg.sender.call{value: refund}("");
+        require(success, "Refund transfer failed");
     }
 
     /**
