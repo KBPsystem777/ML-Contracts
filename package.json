@@ -1,5 +1,5 @@
 {
-  "name": "hardhat-project",
+  "name": "managelife-smart-contracts",
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^1.0.4",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.6",
