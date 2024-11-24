@@ -265,25 +265,25 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     /**
      * @notice Allows users to submit a bid to any offered properties.
      * @dev Anyone in public can submit a bid on a property, either MLRE and NFTi holders of not.
-     * @param tokenId tokenId of the property.
+     * @param _tokenId tokenId of the property.
      */
     function placeBid(
-        uint256 tokenId
+        uint256 _tokenId
     ) external payable whenNotPaused nonReentrant isTradingAllowed {
         require(msg.value != 0, "Cannot enter bid of zero");
-        Bid memory existing = bids[tokenId];
+        Bid memory existing = bids[_tokenId];
         require(msg.value > existing.value, "Your bid is too low");
 
         // Handle refund for the previous bidder
         if (existing.value > 0) {
             // Update the pending refunds mapping
             pendingRefunds[existing.bidder] += existing.value;
-            emit BidCancelled(tokenId, existing.value, existing.bidder);
+            emit BidCancelled(_tokenId, existing.value, existing.bidder);
             emit PendingRefund(existing.bidder, existing.value);
         }
         // Record the new bid
-        bids[tokenId] = Bid(msg.sender, msg.value);
-        emit BidEntered(tokenId, msg.value, msg.sender);
+        bids[_tokenId] = Bid(msg.sender, msg.value);
+        emit BidEntered(_tokenId, msg.value, msg.sender);
     }
 
     /**

@@ -97,10 +97,11 @@ contract Life is ERC20, Ownable, Pausable {
      *
      * @dev Reverts if the caller is not the MLIFE contract address,
      * MLIFE contact address is not set and if the contract is on-paused status.
+     * Only the MLRE contract can run this function
      *
-     * @param tokenId TokenId of the NFT to start stake.
+     * @param _tokenId TokenId of the NFT to start stake.
      */
-    function initStakingRewards(uint256 tokenId) external whenNotPaused {
+    function initStakingRewards(uint256 _tokenId) external whenNotPaused {
         require(
             address(_manageLifeToken) != address(0),
             "ManageLife token is not set"
@@ -108,9 +109,9 @@ contract Life is ERC20, Ownable, Pausable {
         // Making sure the one who will trigger this function is only the ManageLife NFT contract.
         require(
             msg.sender == address(_manageLifeToken),
-            "Only ManageLife token"
+            "Only ManageLife token address can execute"
         );
-        startOfStakingRewards[tokenId] = uint64(block.timestamp);
+        startOfStakingRewards[_tokenId] = uint64(block.timestamp);
     }
 
     /**
@@ -210,11 +211,13 @@ contract Life is ERC20, Ownable, Pausable {
      * - A percentage of the token reward will be burned. Percentage will be determined by the ML admin.
      * - Burn call will be handled separately by the frontend app.
      *
-     * @param tokenId MLifeNFT's tokenId.
+     * @param _tokenId MLifeNFT's tokenId.
      */
-    function claimStakingRewards(uint256 tokenId) public whenNotPaused {
+    function claimStakingRewards(
+        uint256 _tokenId
+    ) public onlyMembers(_tokenId) whenNotPaused {
         /*** @notice Variable containers that holds the claimable amounts of the user. */
-        uint256 rewards = claimableStakingRewards(tokenId);
+        uint256 rewards = claimableStakingRewards(_tokenId);
 
         require(
             address(_manageLifeToken) != address(0),
@@ -223,16 +226,8 @@ contract Life is ERC20, Ownable, Pausable {
 
         /// @dev Making sure that admin wallet will not own token rewards.
         require(
-            _manageLifeToken.ownerOf(tokenId) != owner(),
+            _manageLifeToken.ownerOf(_tokenId) != owner(),
             "Platform wallet cannot claim"
-        );
-
-        /// @dev Making sure that only admin and MLifeNFT owners will claim the rewards.
-        require(
-            msg.sender == owner() ||
-                msg.sender == _manageLifeToken.ownerOf(tokenId) ||
-                msg.sender == address(_manageLifeToken),
-            "Unauthorized."
         );
 
         /// @dev Adding require check to comply with the maximum token supply.
@@ -244,25 +239,25 @@ contract Life is ERC20, Ownable, Pausable {
          * At the same time, a percentage of the claimed reward will be burned
          * which will be handled separately by the frontend app.
          */
-        _mint(_manageLifeToken.ownerOf(tokenId), rewards);
+        _mint(_manageLifeToken.ownerOf(_tokenId), rewards);
 
         /**
          * @dev Resetting the startOfStakingsRewards of the token to make
          * sure their claimable rewards will reset as well.
          */
-        startOfStakingRewards[tokenId] = uint64(block.timestamp);
+        startOfStakingRewards[_tokenId] = uint64(block.timestamp);
         emit StakingClaimed(msg.sender, rewards);
     }
 
     /**
      * @notice Custom access modifier to make sure that the caller of transactions are member of ML.
      * @dev This identifies if the caller is an MLifeNFT or MLifeNFTi holder.
-     * @param tokenId TokenId of the NFT that needs to be checked.
+     * @param _tokenId TokenId of the NFT that needs to be checked.
      */
-    modifier onlyMembers(uint256 tokenId) {
+    modifier onlyMembers(uint256 _tokenId) {
         require(
-            msg.sender == _manageLifeToken.ownerOf(tokenId) ||
-                msg.sender == _investorsNft.ownerOf(tokenId),
+            msg.sender == _manageLifeToken.ownerOf(_tokenId) ||
+                msg.sender == _investorsNft.ownerOf(_tokenId),
             "Only NFT holders can execute this"
         );
         _;
