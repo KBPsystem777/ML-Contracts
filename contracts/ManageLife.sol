@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
@@ -14,7 +14,7 @@ import "./Marketplace.sol";
  * Properties are all being managed by ManageLife.
  * NFT Symbol: MLRE
  *
- * @author https://managelife.co
+ * @author https://managelife.io
  */
 contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     Life public lifeToken;
@@ -92,18 +92,18 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      * @dev Property ID will be the property number provided by the ML-NFT-API service.
      * Life token issuance rate will be populated by the web3 admin from the portal app.
      *
-     * @param propertyId Property ID of the NFT. This will be provided by the FrontEnd app.
-     * @param lifeTokenIssuanceRate_ Issuance rate percentage that is based on mortgage payments maintained by ML.
+     * @param _propertyId Property ID of the NFT. This will be provided by the FrontEnd app.
+     * @param _lifeTokenIssuanceRate Issuance rate percentage that is based on mortgage payments maintained by ML.
      */
     function mint(
-        uint256 propertyId,
-        uint256 lifeTokenIssuanceRate_
+        uint256 _propertyId,
+        uint256 _lifeTokenIssuanceRate
     ) external onlyOwner {
+        uint256 tokenId = _propertyId;
         require(address(lifeToken) != address(0), "Life token is not set");
-        uint256 tokenId = propertyId;
-        require(!_exists(tokenId), "Error: TokenId already minted");
-        _mint(owner(), propertyId);
-        lifeTokenIssuanceRate[tokenId] = lifeTokenIssuanceRate_;
+        require(!isTokenMinted(tokenId), "Error: TokenId already minted");
+        lifeTokenIssuanceRate[tokenId] = _lifeTokenIssuanceRate;
+        _mint(owner(), tokenId);
     }
 
     /**
@@ -221,6 +221,15 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     /***
+     * @notice Function to check if a token has already been minted.
+     * @param _tokenId TokenId of an NFT to be queried
+     * @return bool - Boolean result
+     */
+    function isTokenMinted(uint256 _tokenId) public view returns (bool) {
+        return ownerOf(_tokenId) != address(0);
+    }
+
+    /***
      * @notice Function to update the token issuance rate of an NFT
      * @dev Issuance rate are being maintained by the ML admins.
      * @param tokenId of an NFT
@@ -233,7 +242,6 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         lifeToken.claimStakingRewards(tokenId);
         lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
         lifeToken.updateStartOfStaking(tokenId, uint64(block.timestamp));
-
         emit TokenIssuanceRateUpdated(tokenId, newLifeTokenIssuanceRate);
     }
 }
