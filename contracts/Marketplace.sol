@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
@@ -230,19 +230,12 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         // Deleting the offers mapping once sell is confirmed
         delete offers[tokenId];
 
-        // Transfer NFT using safeTransferFrom in order to accommodate
-        // transfers for both EOAs and Contract Accounts
-        mLife.safeTransferFrom(seller, msg.sender, tokenId);
-
         // Calculate and allocate commission
         uint256 commission = 0;
         if (adminPercent > 0) {
             commission = (amount * adminPercent) / PERCENTS_DIVIDER;
             adminPending += commission;
         }
-
-        // Transfer ether to seller minus commission
-        _safeTransferETH(seller, amount - commission);
 
         emit Bought(tokenId, amount, seller, msg.sender, true);
 
@@ -253,6 +246,20 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             _safeTransferETH(bid.bidder, bid.value);
             emit BidCancelled(tokenId, bid.value, bid.bidder);
         }
+
+        // Ensure the seller is still the owner of the token
+        require(mLife.ownerOf(tokenId) == seller, "NFT transfer failed");
+        // Transfer NFT using safeTransferFrom to accommodate EOAs and contract accounts
+        mLife.safeTransferFrom(seller, msg.sender, tokenId);
+
+        // Validate that the amount is sufficient to cover the commission
+        require(amount >= commission, "Amount is less than commission");
+
+        // Calculate the seller's earnings after commission deduction
+        uint256 sellerEarnings = amount - commission;
+
+        // Transfer ether to seller minus commission
+        _safeTransferETH(seller, sellerEarnings);
     }
 
     /**
@@ -330,9 +337,9 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         Bid memory bid = bids[tokenId];
         require(bid.bidder == msg.sender, "The Sender is not original bidder");
         uint256 amount = bid.value;
-        emit BidWithdrawn(tokenId, amount);
         bids[tokenId] = Bid(address(0x0), 0);
         _safeTransferETH(msg.sender, amount);
+        emit BidWithdrawn(tokenId, amount);
     }
 
     /**
