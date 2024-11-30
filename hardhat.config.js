@@ -46,6 +46,10 @@ module.exports = {
       url: process.env.REACT_APP_POLYGON_URL,
       accounts: [process.env.REACT_APP_PRIVATE_KEY],
     },
+    baseSepolia: {
+      url: process.env.REACT_APP_BASE_SEPOLIA_URL,
+      accounts: [process.env.REACT_APP_PRIVATE_KEY],
+    },
   },
   etherscan: {
     //apiKey: process.env.REACT_APP_POLYGONSCAN_KEY, // Change if changing networks
