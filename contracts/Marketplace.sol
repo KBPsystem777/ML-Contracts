@@ -4,6 +4,9 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import "./ManageLife.sol";
 
 /**
@@ -15,8 +18,22 @@ import "./ManageLife.sol";
  * @author https://managelife.io
  */
 contract Marketplace is ReentrancyGuard, Pausable, Ownable {
-    /// @notice Deployer address will be considered as the ML admins
-    constructor() {}
+    using SafeERC20 for IERC20;
+
+    // Instance of the MLRE NFT contract.
+    ManageLife public mLife;
+
+    // @note Supported tokens: $MLIFE, USDC and USDT
+    IERC20 public lifeToken;
+    IERC20 public usdt;
+    IERC20 public usdc;
+
+    // @notice Deployer address will be considered as the ML admins
+    constructor(address _lifeToken, address _usdt, address _usdc) {
+        lifeToken = IERC20(_lifeToken);
+        usdt = IERC20(_usdt);
+        usdc = IERC20(_usdc);
+    }
 
     /// Percent divider to calculate ML's transaction earnings.
     uint256 public constant PERCENTS_DIVIDER = 10000;
@@ -29,19 +46,18 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
      */
     bool public allowTrading = false;
 
-    /// instance of the MLRE NFT contract.
-    ManageLife public mLife;
-
     struct Offer {
         uint256 tokenId;
         address seller;
         uint256 price;
         address offeredTo;
+        address paymentToken;
     }
 
     struct Bid {
         address bidder;
         uint256 value;
+        address paymentToken;
     }
 
     /// @notice Default admin fee. 200 initial value is equals to 2%
@@ -62,13 +78,15 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     event Offered(
         uint256 indexed tokenId,
         uint256 price,
-        address indexed toAddress
+        address indexed toAddress,
+        address indexed paymentToken
     );
 
     event BidEntered(
         uint256 indexed tokenId,
         uint256 value,
-        address indexed fromAddress
+        address indexed fromAddress,
+        address indexed paymentToken
     );
 
     event BidCancelled(
@@ -81,17 +99,20 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         uint256 indexed tokenId,
         uint256 value,
         address indexed fromAddress,
-        address indexed toAddress,
-        bool isInstant
+        address indexed toAddress
     );
-    event BidWithdrawn(uint256 indexed tokenId, uint256 value);
-    event Cancelled(uint256 indexed tokenId);
+
+    event BidWithdrawn(
+        uint256 indexed tokenId,
+        uint256 value,
+        address indexed bidder
+    );
+    event SaleCancelled(uint256 indexed tokenId);
     event TradingStatus(bool _isTradingAllowed);
     event Received(address, uint);
     event PendingRefund(address indexed bidder, uint256 refundAmount);
     event RefundSent(address indexed bidder, uint256 refundAmount);
     event AdminWithdrawal(uint256 amount);
-
     error InvalidPercent(uint256 _percent, uint256 minimumPercent);
 
     /// @notice Security feature to Pause smart contracts transactions
@@ -137,6 +158,14 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         adminPercent = _percent;
     }
 
+    function safeTransferERC20(
+        IERC20 token,
+        address to,
+        uint256 amount
+    ) internal {
+        token.safeTransfer(to, amount);
+    }
+
     /**
      * @notice Withdrawalof marketplace earnings by the Admin.
      * @dev Can only be triggered by the admin wallet or contract owner.
@@ -161,7 +190,7 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     function cancelForSale(uint256 tokenId) external {
         require(msg.sender == mLife.ownerOf(tokenId), "Unathorized");
         delete offers[tokenId];
-        emit Cancelled(tokenId);
+        emit SaleCancelled(tokenId);
     }
 
     /**
@@ -171,19 +200,28 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
      */
     function offerForSale(
         uint256 tokenId,
-        uint256 minSalePrice
+        uint256 minSalePrice,
+        address paymentToken
     ) external whenNotPaused isTradingAllowed {
         require(
             msg.sender == mLife.ownerOf(tokenId),
             "You do not own this MLRE"
         );
+        require(
+            paymentToken == address(lifeToken) ||
+                paymentToken == address(usdt) ||
+                paymentToken == address(usdc) ||
+                paymentToken == address(0),
+            "Unsupported payment"
+        );
         offers[tokenId] = Offer(
             tokenId,
             msg.sender,
             minSalePrice,
-            address(0x0)
+            address(0x0),
+            paymentToken
         );
-        emit Offered(tokenId, minSalePrice, address(0x0));
+        emit Offered(tokenId, minSalePrice, address(0x0), paymentToken);
     }
 
     /**
@@ -195,14 +233,28 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     function offerForSaleToAddress(
         uint256 tokenId,
         uint256 minSalePrice,
-        address toAddress
+        address toAddress,
+        address paymentToken
     ) external whenNotPaused isTradingAllowed {
         require(
             msg.sender == mLife.ownerOf(tokenId),
             "You do not own this MLRE"
         );
-        offers[tokenId] = Offer(tokenId, msg.sender, minSalePrice, toAddress);
-        emit Offered(tokenId, minSalePrice, toAddress);
+        require(
+            paymentToken == address(lifeToken) ||
+                paymentToken == address(usdt) ||
+                paymentToken == address(usdc) ||
+                paymentToken == address(0),
+            "Unsupported payment"
+        );
+        offers[tokenId] = Offer(
+            tokenId,
+            msg.sender,
+            minSalePrice,
+            toAddress,
+            paymentToken
+        );
+        emit Offered(tokenId, minSalePrice, toAddress, paymentToken);
     }
 
     /**
@@ -220,10 +272,12 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         );
 
         uint256 amount = msg.value;
+        require(offer.price > 0, "Price must be greater than zero");
         require(
-            amount == offer.price && offer.price > 0,
-            "Invalid ether amount"
+            amount == offer.price || offer.paymentToken != address(0),
+            "Invalid payment amount"
         );
+
         address seller = offer.seller;
         require(seller != msg.sender, "Seller cannot be buyer");
 
@@ -237,7 +291,18 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             adminPending += commission;
         }
 
-        emit Bought(tokenId, amount, seller, msg.sender, true);
+        emit Bought(tokenId, amount, seller, msg.sender);
+
+        if (offer.paymentToken == address(0)) {
+            require(msg.value == offer.price, "ETH does not match offer");
+            _safeTransferETH(seller, offer.price - commission);
+        } else if (offer.paymentToken == address(lifeToken)) {
+            safeTransferERC20(lifeToken, seller, offer.price - commission);
+        } else if (offer.paymentToken == address(usdt)) {
+            safeTransferERC20(usdt, seller, offer.price - commission);
+        } else if (offer.paymentToken == address(usdc)) {
+            safeTransferERC20(usdc, seller, offer.price - commission);
+        }
 
         // Handle bid cancellation if buyer was also highest bidder
         Bid memory bid = bids[tokenId];
@@ -259,7 +324,15 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         uint256 sellerEarnings = amount - commission;
 
         // Transfer ether to seller minus commission
-        _safeTransferETH(seller, sellerEarnings);
+        if (offer.paymentToken == address(0)) {
+            _safeTransferETH(seller, sellerEarnings);
+        } else if (offer.paymentToken == address(lifeToken)) {
+            safeTransferERC20(lifeToken, seller, sellerEarnings);
+        } else if (offer.paymentToken == address(usdt)) {
+            safeTransferERC20(usdt, seller, sellerEarnings);
+        } else if (offer.paymentToken == address(usdc)) {
+            safeTransferERC20(usdc, seller, sellerEarnings);
+        }
     }
 
     /**
@@ -282,8 +355,8 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
             emit PendingRefund(existing.bidder, existing.value);
         }
         // Record the new bid
-        bids[_tokenId] = Bid(msg.sender, msg.value);
-        emit BidEntered(_tokenId, msg.value, msg.sender);
+        bids[_tokenId] = Bid(msg.sender, msg.value, address(0));
+        emit BidEntered(_tokenId, msg.value, msg.sender, address(0));
     }
 
     /**
@@ -294,37 +367,38 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
     function acceptBid(
         uint256 tokenId,
         uint256 minPrice
-    ) external whenNotPaused isTradingAllowed {
+    ) external whenNotPaused isTradingAllowed nonReentrant {
+        Bid memory bid = bids[tokenId];
+
         require(
             msg.sender == mLife.ownerOf(tokenId),
             "You do not own this MLRE"
         );
-        address seller = msg.sender;
-        Bid memory bid = bids[tokenId];
-        uint256 amount = bid.value;
-        require(amount != 0, "Cannot enter bid of zero");
-        require(amount >= minPrice, "The bid is too low");
-
-        address bidder = bid.bidder;
-        require(seller != bidder, "You already own this token");
-
-        offers[tokenId] = Offer(tokenId, bidder, 0, address(0x0));
-        bids[tokenId] = Bid(address(0x0), 0);
-
-        /// Transfer MLRE NFT to the Bidder
-        mLife.transferFrom(msg.sender, bidder, tokenId);
+        require(bid.value > 0, "No active bid on this MLRE");
+        require(
+            bid.value == minPrice,
+            "The bid doesnt match the property value"
+        );
 
         uint256 commission = 0;
         /// Transfer Commission to admin wallet
         if (adminPercent > 0) {
-            commission = (amount * adminPercent) / PERCENTS_DIVIDER;
+            commission = (bid.value * adminPercent) / PERCENTS_DIVIDER;
             adminPending += commission;
         }
 
-        /// Transfer ETH to seller
-        _safeTransferETH(seller, amount - commission);
+        adminPending += commission;
 
-        emit Bought(tokenId, bid.value, seller, bidder, false);
+        delete offers[tokenId];
+        delete bids[tokenId];
+
+        /// Transfer MLRE NFT to the Bidder
+        mLife.transferFrom(msg.sender, bid.bidder, tokenId);
+
+        /// Transfer ETH to seller
+        _safeTransferETH(msg.sender, bid.value - commission);
+
+        emit Bought(tokenId, bid.value, msg.sender, bid.bidder);
     }
 
     /**
@@ -335,11 +409,15 @@ contract Marketplace is ReentrancyGuard, Pausable, Ownable {
         uint256 tokenId
     ) external nonReentrant isTradingAllowed {
         Bid memory bid = bids[tokenId];
-        require(bid.bidder == msg.sender, "The Sender is not original bidder");
+        require(bid.bidder == msg.sender, "No bid to withdraw");
+
         uint256 amount = bid.value;
-        bids[tokenId] = Bid(address(0x0), 0);
+
+        bids[tokenId] = Bid(address(0x0), 0, address(0));
+
         _safeTransferETH(msg.sender, amount);
-        emit BidWithdrawn(tokenId, amount);
+
+        emit BidWithdrawn(tokenId, amount, address(0));
     }
 
     /**
