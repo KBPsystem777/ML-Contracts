@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./ManageLife.sol";
 import "./MLInvestorsNFT.sol";
 
@@ -34,7 +34,11 @@ contract Life is ERC20, Ownable, Pausable {
     ManageLifeInvestorsNFT private _investorsNft;
 
     /// Set initial token supply before deploying.
-    constructor() ERC20("ManageLife Token", "MLIFE") {
+    constructor()
+        ERC20("ManageLife Token", "MLIFE")
+        Pausable()
+        Ownable(msg.sender)
+    {
         _mint(msg.sender, 2000000000000000000000000000);
     }
 
@@ -177,7 +181,9 @@ contract Life is ERC20, Ownable, Pausable {
      * @param _amount Additional amount to be minted.
      */
     function mint(uint256 _amount) external onlyOwner isMaxSupply(_amount) {
+        totalMinted += _amount; // Update the totalMinted variable
         _mint(msg.sender, _amount);
+        emit Supplyminted(msg.sender, _amount);
     }
 
     /**
@@ -195,7 +201,13 @@ contract Life is ERC20, Ownable, Pausable {
         uint256 _amount,
         uint256 _tokenId
     ) external isMaxSupply(_amount) onlyMembers(_tokenId) {
+        require(
+            msg.sender == _investorsNft.ownerOf(_tokenId),
+            "Caller does not own this NFTi"
+        );
+        totalMinted += _amount; // Update the totalMinted variable
         _mint(msg.sender, _amount);
+        emit Supplyminted(msg.sender, _amount);
     }
 
     /**
@@ -271,11 +283,5 @@ contract Life is ERC20, Ownable, Pausable {
     modifier isMaxSupply(uint256 amount) {
         require(totalSupply() + amount <= MAX_SUPPLY, "$LIFE supply is maxed");
         _;
-    }
-
-    function _mint(address _account, uint256 _amount) internal override {
-        totalMinted += _amount; // Update the totalMinted variable
-        super._mint(_account, _amount);
-        emit Supplyminted(_account, _amount);
     }
 }

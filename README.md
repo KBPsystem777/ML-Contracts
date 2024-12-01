@@ -2,9 +2,17 @@
 
 Smart contracts for ManageLife Blockchain
 
-## Developer wallet
+## Developer wallets
+
+Mainnet:
+
+**0x81178579113da63EfA5C22f6CC21dFD3C2388735**
+
+Testnet:
 
 **0x1fcb2d8e0420fd4da92979446ab247bbaa5a958a**
+
+**0x698DBddb9aABF4f46B9ECd27ab8cE3E91b0512Ca**
 
 ## Decentralized Marketplace
 

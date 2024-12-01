@@ -39,7 +39,12 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     );
     event BaseURIUpdated(string _newURIAddress);
 
-    constructor() ERC721("ManageLife Member", "MLRE") {}
+    constructor()
+        Ownable(msg.sender)
+        ERC721URIStorage()
+        ERC721Burnable()
+        ERC721("ManageLife Member", "MLRE")
+    {}
 
     /// @notice Public base URI of ML's NFTs
     string public baseUri = "https://api.managelife.io/api/v1/nft/";
@@ -76,6 +81,12 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         lifeToken = Life(lifeToken_);
     }
 
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(ERC721, ERC721URIStorage) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
     /**
      * @notice Mark an NFT or property fully paid from all mortgages at ML.
      * @dev This can only be executed by the contract deployer or admin wallet.
@@ -106,7 +117,6 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     ) external onlyOwner {
         uint256 tokenId = _propertyId;
         require(address(lifeToken) != address(0), "Life token is not set");
-        require(!isTokenMinted(tokenId), "Error: TokenId already minted");
         lifeTokenIssuanceRate[tokenId] = _lifeTokenIssuanceRate;
         _mint(owner(), tokenId);
     }
@@ -114,10 +124,10 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     /**
      * @notice Burn an NFT. Typical use case is remove an property from ML's custody.
      * @dev Can only be executed by the admin/deployer wallet.
-     * @param tokenId TokenId of the NFT to be burned.
+     * @param _tokenId TokenId of the NFT to be burned.
      */
-    function burn(uint256 tokenId) public override onlyOwner {
-        _burn(tokenId);
+    function burn(uint256 _tokenId) public override(ERC721Burnable) onlyOwner {
+        super.burn(_tokenId);
     }
 
     /**
@@ -157,14 +167,17 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      * @param to Wallet address who will be granted with the above permission.
      * @param tokenId TokenId of the NFT.
      */
-    function approve(address to, uint256 tokenId) public override {
+    function approve(
+        address to,
+        uint256 tokenId
+    ) public virtual override(ERC721, IERC721) {
         require(
             fullyPaid[tokenId] ||
                 ownerOf(tokenId) == owner() ||
                 to == address(marketplace),
             "Approval restricted"
         );
-        super.approve(to, tokenId);
+        ERC721.approve(to, tokenId);
     }
 
     /**
@@ -186,7 +199,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         address from,
         address to,
         uint256 tokenId
-    ) internal override {
+    ) internal {
         // @note We are preventing nfts that are not full paid yet to be transferred to another address
         // @note Allowed transfers are only from admin to users and users to admin
         require(
@@ -213,14 +226,6 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         if (fullyPaid[tokenId] && from != owner()) {
             lifeToken.initStakingRewards(tokenId);
         }
-
-        super._beforeTokenTransfer(from, to, tokenId);
-    }
-
-    function _burn(
-        uint256 tokenId
-    ) internal override(ERC721, ERC721URIStorage) {
-        super._burn(tokenId);
     }
 
     /**
@@ -232,15 +237,6 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         uint256 tokenId
     ) public view override(ERC721, ERC721URIStorage) returns (string memory) {
         return super.tokenURI(tokenId);
-    }
-
-    /***
-     * @notice Function to check if a token has already been minted.
-     * @param _tokenId TokenId of an NFT to be queried
-     * @return bool - Boolean result
-     */
-    function isTokenMinted(uint256 _tokenId) public view returns (bool) {
-        return ownerOf(_tokenId) != address(0);
     }
 
     /***
