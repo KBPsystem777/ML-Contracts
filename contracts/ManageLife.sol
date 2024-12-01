@@ -8,6 +8,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./Life.sol";
 import "./Marketplace.sol";
 
+// @note Initialize the rewards on token transfer from admin to another wallet
+
 /**
  * @notice ManageLife Member NFT (ERC-721) contract for ManageLife Members.
  * An NFT represents a membership or home ownership in real life.
@@ -118,6 +120,7 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         uint256 tokenId = _propertyId;
         require(address(lifeToken) != address(0), "Life token is not set");
         lifeTokenIssuanceRate[tokenId] = _lifeTokenIssuanceRate;
+        lifeToken.initStakingRewards(_propertyId);
         _mint(owner(), tokenId);
     }
 

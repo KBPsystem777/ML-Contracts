@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./ManageLife.sol";
 import "./MLInvestorsNFT.sol";
 
+// @note MintInvestorRewards function has been deleted and will be moved to another contract
+
 /**
  * @notice An ERC-20 contract for ManageLife.
  * Token Symbol: MLIFE ($MLIFE)
@@ -25,7 +27,10 @@ contract Life is ERC20, Ownable, Pausable {
     /// @notice Maximum token supply
     uint256 public constant MAX_SUPPLY = 5000000000000000000000000000;
 
-    uint256 public totalMinted = 0;
+    /// @notice Initial token supply
+    uint256 public constant initialTokenSupply = 2000000000000000000000000000;
+
+    uint256 public totalMintedTokens = initialTokenSupply;
 
     /// Instance of the MLIFE NFT contract
     ManageLife private _manageLifeToken;
@@ -181,31 +186,7 @@ contract Life is ERC20, Ownable, Pausable {
      * @param _amount Additional amount to be minted.
      */
     function mint(uint256 _amount) external onlyOwner isMaxSupply(_amount) {
-        totalMinted += _amount; // Update the totalMinted variable
-        _mint(msg.sender, _amount);
-        emit Supplyminted(msg.sender, _amount);
-    }
-
-    /**
-     * @notice Mint $MLIFE token rewards for NFTi Investors.
-     *
-     * @dev MLifeNFTi contract depends on this function to mint $LIFE
-     * token rewards to investors. Newly minted tokens here will be
-     * credited directly to the investor's wallet address and NOT on the admin wallet.
-     * Will only mint new token supply if 5B max $MLIFE token supply is not yet reached.
-     *
-     * @param _amount Amount to be minted on the investor's address. Amount is based on the
-     * calculated staking rewards from MLifeNFTi contract.
-     */
-    function mintInvestorsRewards(
-        uint256 _amount,
-        uint256 _tokenId
-    ) external isMaxSupply(_amount) onlyMembers(_tokenId) {
-        require(
-            msg.sender == _investorsNft.ownerOf(_tokenId),
-            "Caller does not own this NFTi"
-        );
-        totalMinted += _amount; // Update the totalMinted variable
+        totalMintedTokens += _amount; // Update the totalMintedTokens variable
         _mint(msg.sender, _amount);
         emit Supplyminted(msg.sender, _amount);
     }
@@ -246,11 +227,13 @@ contract Life is ERC20, Ownable, Pausable {
         require(totalSupply() + rewards <= MAX_SUPPLY, "$LIFE supply is maxed");
 
         /**
-         * @dev If the answer on the above questions are true,
+         * @dev If the answer on the above questions are true, update the totalMintedTokens and
          * mint new ERC20 $LIFE tokens. Claimable amount will be minted on the property owner.
          * At the same time, a percentage of the claimed reward will be burned
          * which will be handled separately by the frontend app.
          */
+
+        totalMintedTokens += rewards;
         _mint(_manageLifeToken.ownerOf(_tokenId), rewards);
 
         /**

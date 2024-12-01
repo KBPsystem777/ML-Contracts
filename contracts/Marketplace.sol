@@ -9,6 +9,9 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./ManageLife.sol";
 
+// @todo Add checks for adminPending ETH and tokens
+// @todo Check the requires for offerForSale functions
+
 /**
  * @notice Marketplace contract for ManageLife.
  * This contract is the market trading of NFTs in the ML ecosystem.
