@@ -25,12 +25,13 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     // Constants and variables (unchanged from earlier)
     uint256 public marketplaceFee = 200; // 2% scaled
     uint256 public constant FEE_DENOMINATOR = 10000;
+    uint256 public MAX_FEE = 900; // 9% Initial max admin fee
 
     uint256 public listingCounter;
     uint256 public adminsEthEarnings;
+    mapping(address => uint256) public adminsTokenEarnings;
     mapping(uint256 => Listing) public listings;
     mapping(uint256 => Bid) public currentBids;
-    mapping(address => uint256) public adminsTokenEarnings;
     mapping(address => uint256) public ethRefundsForBidders;
     mapping(address => mapping(address => uint256))
         public tokenRefundsForBidders;
@@ -67,6 +68,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     event MLifeTokenAddressUpdated(address _oldAddress, address _newAddress);
     event UsdcAddressUpdated(address _oldAddress, address _newAddress);
     event UsdtAddressUpdated(address _oldAddress, address _newAddress);
+    event MaxFeeUpdated(uint256 _newMaxFee);
 
     event Paused();
     event Unpaused();
@@ -90,6 +92,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         _;
     }
 
+    modifier isListingActive(uint256 _tokenId) {
+        require(listings[_tokenId].active, "Listing not active");
+        _;
+    }
+
     constructor(
         address _nftContract,
         address _MLIFE,
@@ -110,8 +117,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         _unpause();
     }
 
-    function updateMarketplaceFee(uint256 _newFee) external onlyOwner {
-        require(_newFee <= 900, "Fee exceeds 9%");
+    function updateMarketplaceFee(
+        uint256 _newFee
+    ) external onlyOwner whenNotPaused {
+        require(_newFee <= MAX_FEE, "Fee exceeds threshold");
         marketplaceFee = _newFee;
         emit MarketplaceFeeUpdated(_newFee);
     }
@@ -138,6 +147,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         require(_newAddress != address(0), "Invalid address");
         tokenUSDC = _newAddress;
         emit UsdcAddressUpdated(tokenUSDC, _newAddress);
+    }
+
+    function updateMaxFee(uint256 _newMaxFee) external onlyOwner {
+        MAX_FEE = _newMaxFee;
+        emit MaxFeeUpdated(_newMaxFee);
     }
 
     function createListing(
@@ -182,9 +196,8 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     function placeBid(
         uint256 listingId,
         uint256 amount
-    ) external payable whenNotPaused nonReentrant {
+    ) external payable whenNotPaused nonReentrant isListingActive(listingId) {
         Listing memory listing = listings[listingId];
-        require(listing.active, "Listing is inactive");
         require(amount >= listing.minPrice, "Bid below minimum price");
 
         if (listing.paymentToken == address(0)) {
@@ -219,11 +232,12 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit BidPlaced(listingId, msg.sender, amount);
     }
 
-    function acceptBid(uint256 listingId) external nonReentrant whenNotPaused {
+    function acceptBid(
+        uint256 listingId
+    ) external nonReentrant whenNotPaused isListingActive(listingId) {
         Listing storage listing = listings[listingId];
         Bid memory bid = currentBids[listingId];
 
-        require(listing.active, "Listing is inactive");
         require(listing.seller == msg.sender, "Only seller can accept bid");
         require(bid.amount > 0, "No active bid");
 
@@ -235,7 +249,6 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             // ETH payment
             adminsEthEarnings += fee;
             payable(listing.seller).transfer(sellerProceeds);
-            payable(owner()).transfer(fee);
         } else {
             // Token payment
             IERC20(listing.paymentToken).transfer(
@@ -243,8 +256,6 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
                 sellerProceeds
             );
             adminsTokenEarnings[listing.paymentToken] += fee;
-            // @note Add tokenAdminWithdraw function
-            // IERC20(listing.paymentToken).transfer(owner(), fee);
         }
 
         // Transfer NFT
@@ -261,6 +272,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit NFTSold(listingId, bid.bidder, listing.seller, bid.amount);
     }
 
+    /*** Allowing bidders to withdraw their outbidden ETHs */
     function withdrawEthRefunds() external nonReentrant {
         uint256 amount = ethRefundsForBidders[msg.sender];
         require(amount > 0, "No refundable amount");
@@ -268,6 +280,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         payable(msg.sender).transfer(amount);
     }
 
+    /*** Allowing bidders to withdraw their outbidden tokens */
     function withdrawTokenRefunds(address _paymentToken) external nonReentrant {
         uint256 amount = tokenRefundsForBidders[msg.sender][_paymentToken];
         require(amount > 0, "No refundable token");
