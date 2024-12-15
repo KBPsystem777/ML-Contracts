@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-// Same imports as before
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     struct Listing {
@@ -22,7 +22,8 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         uint256 amount;
     }
 
-    // Constants and variables (unchanged from earlier)
+    using SafeERC20 for IERC20;
+
     uint256 public marketplaceFee = 200; // 2% scaled
     uint256 public constant FEE_DENOMINATOR = 10000;
     uint256 public MAX_FEE = 900; // 9% Initial max admin fee
@@ -63,6 +64,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         address _token,
         uint256 _amount
     );
+    event RefundIssued(address _receiver, address _tokenType, uint256 _amount);
     event MarketplaceFeeUpdated(uint256 newFee);
     event NftAddressUpdated(address _oldAddress, address _newAddress);
     event MLifeTokenAddressUpdated(address _oldAddress, address _newAddress);
@@ -164,6 +166,12 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         onlyNFTOwner(tokenId)
         validPaymentToken(paymentToken)
     {
+        require(minPrice > 0, "Price should not be zero");
+        require(
+            IERC721(nftContract).isApprovedForAll(msg.sender, address(this)) ||
+                IERC721(nftContract).getApproved(tokenId) == address(this),
+            "NFT Approval required"
+        );
         IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
 
         listings[listingCounter] = Listing({
@@ -189,6 +197,9 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     ) external whenNotPaused nonReentrant {
         require(listings[_tokenId].active, "Listing not active");
         require(listings[_tokenId].seller == msg.sender, "Not listing owner");
+
+        // Transferring back the NFT to the owner
+        IERC721(nftContract).transferFrom(address(this), msg.sender, _tokenId);
         delete listings[_tokenId];
         emit ListingCancelled(_tokenId, msg.sender);
     }
@@ -241,7 +252,8 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         require(listing.seller == msg.sender, "Only seller can accept bid");
         require(bid.amount > 0, "No active bid");
 
-        uint256 fee = (bid.amount * marketplaceFee) / FEE_DENOMINATOR;
+        uint256 initialAmt = bid.amount * marketplaceFee;
+        uint256 fee = initialAmt / FEE_DENOMINATOR;
         uint256 sellerProceeds = bid.amount - fee;
 
         // Distribute proceeds
@@ -278,14 +290,20 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         require(amount > 0, "No refundable amount");
         ethRefundsForBidders[msg.sender] = 0;
         payable(msg.sender).transfer(amount);
+        emit RefundIssued(msg.sender, address(0), amount);
     }
 
     /*** Allowing bidders to withdraw their outbidden tokens */
     function withdrawTokenRefunds(address _paymentToken) external nonReentrant {
         uint256 amount = tokenRefundsForBidders[msg.sender][_paymentToken];
         require(amount > 0, "No refundable token");
+
+        // Resetting the token refunds mapping
         tokenRefundsForBidders[msg.sender][_paymentToken] = 0;
-        IERC20(_paymentToken).transfer(msg.sender, amount);
+
+        bool success = IERC20(_paymentToken).transfer(msg.sender, amount);
+        require(success, "Token refund failed");
+        emit RefundIssued(msg.sender, _paymentToken, amount);
     }
 
     function withdrawBid(
@@ -301,11 +319,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     }
 
     function withdrawAdminEthEarnings() external onlyOwner nonReentrant {
-        uint256 adminEarnings = adminsEthEarnings;
-        require(adminEarnings > 0, "No ETH to withdraw");
+        uint256 earnings = adminsEthEarnings;
+        require(earnings > 0, "No ETH to withdraw");
         adminsEthEarnings = 0;
-        _safeTransferETH(owner(), adminEarnings);
-        emit AdminEthWithdrawals(owner(), adminEarnings);
+        payable(msg.sender).transfer(earnings);
+        emit AdminEthWithdrawals(owner(), earnings);
     }
 
     function withdrawAdminTokenEarnings(
@@ -337,5 +355,6 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         } else {
             tokenRefundsForBidders[bidder][paymentToken] += amount;
         }
+        emit RefundIssued(bidder, paymentToken, amount);
     }
 }
