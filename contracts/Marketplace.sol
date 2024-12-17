@@ -275,10 +275,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         if (listing.paymentToken == address(0)) {
             // ETH payment
             // Safe ETH transfer
-            (bool success, ) = listing.seller.call{
-                value: sellerProceeds,
-                gas: 5000
-            }("");
+            (bool success, ) = listing.seller.call{value: sellerProceeds}("");
             require(success, "ETH transfer to seller failed");
         } else {
             // Token payment
@@ -315,7 +312,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         ethRefundsForBidders[msg.sender] = 0;
 
         // Safe transfer ETH
-        (bool success, ) = msg.sender.call{value: amount, gas: 5000}("");
+        (bool success, ) = msg.sender.call{value: amount}("");
         require(success, "ETH refund request failed");
 
         emit RefundWithdrawn(address(0), msg.sender, amount);
@@ -355,7 +352,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         adminsEthEarnings = 0;
 
         // Safe ETH transfer
-        (bool success, ) = msg.sender.call{value: earnings, gas: 5000}("");
+        (bool success, ) = msg.sender.call{value: earnings}("");
         require(success, "ETH earnings transfer failed");
         emit AdminEthWithdrawals(owner(), earnings);
     }
@@ -380,7 +377,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             adminsEthEarnings = 0;
 
             // Safe ETH transfer
-            (bool success, ) = msg.sender.call{value: balance, gas: 5000}("");
+            (bool success, ) = msg.sender.call{value: balance}("");
             require(success, "Emergency ETH transfer failed");
         } else {
             uint256 balance = IERC20(_token).balanceOf(address(this));
