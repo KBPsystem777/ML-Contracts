@@ -122,6 +122,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     function updateMarketplaceFee(
         uint256 _newFee
     ) external onlyOwner whenNotPaused {
+        require(_newFee > 0, "Invalid fee update");
         require(_newFee <= MAX_FEE, "Fee exceeds threshold");
         marketplaceFee = _newFee;
         emit MarketplaceFeeUpdated(_newFee);
@@ -152,6 +153,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     }
 
     function updateMaxFee(uint256 _newMaxFee) external onlyOwner {
+        require(_newMaxFee > 0, "Invalid max fee input");
         MAX_FEE = _newMaxFee;
         emit MaxFeeUpdated(_newMaxFee);
     }
@@ -288,6 +290,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     function withdrawEthRefunds() external nonReentrant {
         uint256 amount = ethRefundsForBidders[msg.sender];
         require(amount > 0, "No refundable amount");
+        require(
+            amount <= address(this).balance,
+            "Insufficient contract balance"
+        );
+
         ethRefundsForBidders[msg.sender] = 0;
         payable(msg.sender).transfer(amount);
         emit RefundIssued(msg.sender, address(0), amount);
@@ -297,12 +304,15 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     function withdrawTokenRefunds(address _paymentToken) external nonReentrant {
         uint256 amount = tokenRefundsForBidders[msg.sender][_paymentToken];
         require(amount > 0, "No refundable token");
+        require(
+            IERC20(_paymentToken).balanceOf(address(this)) >= amount,
+            "Insufficient Marketplace's token balance"
+        );
 
         // Resetting the token refunds mapping
         tokenRefundsForBidders[msg.sender][_paymentToken] = 0;
 
-        bool success = IERC20(_paymentToken).transfer(msg.sender, amount);
-        require(success, "Token refund failed");
+        IERC20(_paymentToken).safeTransfer(msg.sender, amount);
         emit RefundIssued(msg.sender, _paymentToken, amount);
     }
 
@@ -337,12 +347,18 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit AdminTokenWithdrawals(owner(), _tokenAddress, tokenEarnings);
     }
 
-    function _safeTransferETH(address to, uint256 amount) private {
-        (bool success, ) = to.call{value: amount}("");
-        require(
-            success,
-            "ETH transfer failed. Contact support for manual withdrawals"
-        );
+    function adminEmergencyWithdrawal(
+        address _token
+    ) external onlyOwner nonReentrant {
+        if (_token == address(0)) {
+            uint256 balance = address(this).balance;
+            require(balance > 0, "No ETH to withdraw");
+            payable(msg.sender).transfer(balance);
+        } else {
+            uint256 balance = IERC20(_token).balanceOf(address(this));
+            require(balance > 0, "No token balance to withdraw");
+            IERC20(_token).safeTransfer(msg.sender, balance);
+        }
     }
 
     function _refundBid(
