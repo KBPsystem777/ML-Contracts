@@ -361,10 +361,12 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         if (_token == address(0)) {
             uint256 balance = address(this).balance;
             require(balance > 0, "No ETH to withdraw");
+            adminsEthEarnings = 0;
             payable(msg.sender).transfer(balance);
         } else {
             uint256 balance = IERC20(_token).balanceOf(address(this));
             require(balance > 0, "No token balance to withdraw");
+            adminsTokenEarnings[_token] = 0;
             IERC20(_token).safeTransfer(msg.sender, balance);
         }
     }
