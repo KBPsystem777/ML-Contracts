@@ -270,10 +270,13 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         if (listing.paymentToken == address(0)) {
             // ETH payment
             adminsEthEarnings += fee;
-            payable(listing.seller).transfer(sellerProceeds);
+
+            // Safe ETH transfer
+            (bool success, ) = listing.seller.call{value: sellerProceeds}("");
+            require(success, "ETH transfer to seller failed");
         } else {
             // Token payment
-            IERC20(listing.paymentToken).transfer(
+            IERC20(listing.paymentToken).safeTransfer(
                 listing.seller,
                 sellerProceeds
             );
@@ -304,7 +307,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         );
 
         ethRefundsForBidders[msg.sender] = 0;
-        payable(msg.sender).transfer(amount);
+
+        // Safe transfer ETH with gas limit
+        (bool success, ) = msg.sender.call{value: amount, gas: 2300}("");
+        require(success, "ETH refund request failed");
+
         emit RefundIssued(msg.sender, address(0), amount);
     }
 
@@ -340,7 +347,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         uint256 earnings = adminsEthEarnings;
         require(earnings > 0, "No ETH to withdraw");
         adminsEthEarnings = 0;
-        payable(msg.sender).transfer(earnings);
+
+        // Safe ETH transfer with gas limit
+        (bool success, ) = msg.sender.call{value: earnings, gas: 2300}("");
+        require(success, "ETH earnings transfer failed");
         emit AdminEthWithdrawals(owner(), earnings);
     }
 
@@ -362,7 +372,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             uint256 balance = address(this).balance;
             require(balance > 0, "No ETH to withdraw");
             adminsEthEarnings = 0;
-            payable(msg.sender).transfer(balance);
+
+            // Safe ETH transfer with gas limit
+            (bool success, ) = msg.sender.call{value: balance, gas: 2300}("");
+            require(success, "Emergency ETH transfer failed");
         } else {
             uint256 balance = IERC20(_token).balanceOf(address(this));
             require(balance > 0, "No token balance to withdraw");
