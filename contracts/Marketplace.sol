@@ -26,7 +26,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
 
     uint256 public marketplaceFee = 200; // 2% scaled
     uint256 public constant FEE_DENOMINATOR = 10000;
-    uint256 public MAX_FEE = 900; // 9% Initial max admin fee
+    uint256 public MAX_FEE = 500; // 5% Initial max admin fee
 
     uint256 public listingCounter;
     uint256 public adminsEthEarnings;
@@ -208,8 +208,16 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
 
     function placeBid(
         uint256 listingId,
-        uint256 amount
-    ) external payable whenNotPaused nonReentrant isListingActive(listingId) {
+        uint256 amount,
+        address _paymentType
+    )
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+        isListingActive(listingId)
+        validPaymentToken(_paymentType)
+    {
         Listing memory listing = listings[listingId];
         require(amount >= listing.minPrice, "Bid below minimum price");
 
