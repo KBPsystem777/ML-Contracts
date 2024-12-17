@@ -275,7 +275,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         if (listing.paymentToken == address(0)) {
             // ETH payment
             // Safe ETH transfer
-            (bool success, ) = listing.seller.call{value: sellerProceeds}("");
+            (bool success, ) = listing.seller.call{
+                value: sellerProceeds,
+                gas: 5000
+            }("");
             require(success, "ETH transfer to seller failed");
         } else {
             // Token payment
@@ -312,7 +315,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         ethRefundsForBidders[msg.sender] = 0;
 
         // Safe transfer ETH
-        (bool success, ) = msg.sender.call{value: amount}("");
+        (bool success, ) = msg.sender.call{value: amount, gas: 5000}("");
         require(success, "ETH refund request failed");
 
         emit RefundWithdrawn(address(0), msg.sender, amount);
@@ -352,7 +355,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         adminsEthEarnings = 0;
 
         // Safe ETH transfer
-        (bool success, ) = msg.sender.call{value: earnings}("");
+        (bool success, ) = msg.sender.call{value: earnings, gas: 5000}("");
         require(success, "ETH earnings transfer failed");
         emit AdminEthWithdrawals(owner(), earnings);
     }
@@ -377,7 +380,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             adminsEthEarnings = 0;
 
             // Safe ETH transfer
-            (bool success, ) = msg.sender.call{value: balance}("");
+            (bool success, ) = msg.sender.call{value: balance, gas: 5000}("");
             require(success, "Emergency ETH transfer failed");
         } else {
             uint256 balance = IERC20(_token).balanceOf(address(this));
@@ -393,8 +396,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         uint256 amount
     ) internal {
         if (paymentToken == address(0)) {
+            // Refunding the ETH to the outbid user
             ethRefundsForBidders[bidder] += amount;
         } else {
+            // Refunding the token to the outbid user
             tokenRefundsForBidders[bidder][paymentToken] += amount;
         }
         emit RefundIssued(bidder, paymentToken, amount);
