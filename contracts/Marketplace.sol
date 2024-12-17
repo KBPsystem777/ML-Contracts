@@ -71,6 +71,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     event UsdcAddressUpdated(address _oldAddress, address _newAddress);
     event UsdtAddressUpdated(address _oldAddress, address _newAddress);
     event MaxFeeUpdated(uint256 _newMaxFee);
+    event RefundWithdrawn(
+        address _paymentType,
+        address _receiver,
+        uint256 _amount
+    );
 
     event Paused();
     event Unpaused();
@@ -262,15 +267,13 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         require(listing.seller == msg.sender, "Only seller can accept bid");
         require(bid.amount > 0, "No active bid");
 
-        uint256 initialAmt = bid.amount * marketplaceFee;
-        uint256 fee = initialAmt / FEE_DENOMINATOR;
+        uint256 fee = (bid.amount * marketplaceFee) / FEE_DENOMINATOR;
+        adminsEthEarnings += fee;
         uint256 sellerProceeds = bid.amount - fee;
 
         // Distribute proceeds
         if (listing.paymentToken == address(0)) {
             // ETH payment
-            adminsEthEarnings += fee;
-
             // Safe ETH transfer
             (bool success, ) = listing.seller.call{value: sellerProceeds}("");
             require(success, "ETH transfer to seller failed");
@@ -308,11 +311,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
 
         ethRefundsForBidders[msg.sender] = 0;
 
-        // Safe transfer ETH with gas limit
-        (bool success, ) = msg.sender.call{value: amount, gas: 2300}("");
+        // Safe transfer ETH
+        (bool success, ) = msg.sender.call{value: amount}("");
         require(success, "ETH refund request failed");
 
-        emit RefundIssued(msg.sender, address(0), amount);
+        emit RefundWithdrawn(address(0), msg.sender, amount);
     }
 
     /*** Allowing bidders to withdraw their outbidden tokens */
@@ -328,7 +331,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         tokenRefundsForBidders[msg.sender][_paymentToken] = 0;
 
         IERC20(_paymentToken).safeTransfer(msg.sender, amount);
-        emit RefundIssued(msg.sender, _paymentToken, amount);
+        emit RefundWithdrawn(_paymentToken, msg.sender, amount);
     }
 
     function withdrawBid(
@@ -348,8 +351,8 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         require(earnings > 0, "No ETH to withdraw");
         adminsEthEarnings = 0;
 
-        // Safe ETH transfer with gas limit
-        (bool success, ) = msg.sender.call{value: earnings, gas: 2300}("");
+        // Safe ETH transfer
+        (bool success, ) = msg.sender.call{value: earnings}("");
         require(success, "ETH earnings transfer failed");
         emit AdminEthWithdrawals(owner(), earnings);
     }
@@ -373,8 +376,8 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             require(balance > 0, "No ETH to withdraw");
             adminsEthEarnings = 0;
 
-            // Safe ETH transfer with gas limit
-            (bool success, ) = msg.sender.call{value: balance, gas: 2300}("");
+            // Safe ETH transfer
+            (bool success, ) = msg.sender.call{value: balance}("");
             require(success, "Emergency ETH transfer failed");
         } else {
             uint256 balance = IERC20(_token).balanceOf(address(this));
