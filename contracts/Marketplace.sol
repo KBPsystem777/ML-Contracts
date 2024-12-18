@@ -42,17 +42,16 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     address public nftContract;
 
     event ListingCreated(
-        uint256 listingId,
         address indexed seller,
         uint256 indexed tokenId,
         address paymentToken,
         uint256 minPrice
     );
     event ListingCancelled(uint256 _tokenId, address seller);
-    event BidPlaced(uint256 listingId, address indexed bidder, uint256 amount);
-    event BidWithdrawn(uint256 listingId, address indexed bidder);
+    event BidPlaced(uint256 tokenId, address indexed bidder, uint256 amount);
+    event BidWithdrawn(uint256 tokenId, address indexed bidder);
     event NFTSold(
-        uint256 listingId,
+        uint256 tokenId,
         address indexed buyer,
         address indexed seller,
         uint256 price
@@ -188,13 +187,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             active: true
         });
 
-        emit ListingCreated(
-            tokenId,
-            msg.sender,
-            tokenId,
-            paymentToken,
-            minPrice
-        );
+        emit ListingCreated(msg.sender, tokenId, paymentToken, minPrice);
     }
     function cancelListing(
         uint256 _tokenId
@@ -209,36 +202,36 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     }
 
     function placeBid(
-        uint256 listingId,
-        uint256 amount,
+        uint256 _tokenId,
+        uint256 _amount,
         address _paymentType
     )
         external
         payable
         whenNotPaused
         nonReentrant
-        isListingActive(listingId)
+        isListingActive(_tokenId)
         validPaymentToken(_paymentType)
     {
-        Listing memory listing = listings[listingId];
-        require(amount >= listing.minPrice, "Your bid is below minimum price");
+        Listing memory listing = listings[_tokenId];
+        require(_amount >= listing.minPrice, "Your bid is below minimum price");
 
         if (listing.paymentToken == address(0)) {
             // ETH payment
-            require(msg.value == amount, "Incorrect ETH sent");
+            require(msg.value == _amount, "Incorrect ETH sent");
         } else {
             // Token payment
             bool success = IERC20(listing.paymentToken).transferFrom(
                 msg.sender,
                 address(this),
-                amount
+                _amount
             );
             require(success, "Token transfer failed");
         }
 
-        Bid memory currentBid = currentBids[listingId];
+        Bid memory currentBid = currentBids[_tokenId];
         require(
-            amount > currentBid.amount,
+            _amount > currentBid.amount,
             "Bid must be higher than current bid"
         );
 
@@ -251,15 +244,15 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             );
         }
 
-        currentBids[listingId] = Bid({bidder: msg.sender, amount: amount});
-        emit BidPlaced(listingId, msg.sender, amount);
+        currentBids[_tokenId] = Bid({bidder: msg.sender, amount: _amount});
+        emit BidPlaced(_tokenId, msg.sender, _amount);
     }
 
     function acceptBid(
-        uint256 listingId
-    ) external nonReentrant whenNotPaused isListingActive(listingId) {
-        Listing storage listing = listings[listingId];
-        Bid memory bid = currentBids[listingId];
+        uint256 _tokenId
+    ) external nonReentrant whenNotPaused isListingActive(_tokenId) {
+        Listing storage listing = listings[_tokenId];
+        Bid memory bid = currentBids[_tokenId];
 
         require(listing.seller == msg.sender, "Only seller can accept bid");
         require(bid.amount > 0, "No active bid");
@@ -291,10 +284,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         );
 
         // Deleting listings and bids
-        delete listings[listingId];
-        delete currentBids[listingId];
+        delete listings[_tokenId];
+        delete currentBids[_tokenId];
 
-        emit NFTSold(listingId, bid.bidder, listing.seller, bid.amount);
+        emit NFTSold(_tokenId, bid.bidder, listing.seller, bid.amount);
     }
 
     /*** Allowing bidders to withdraw their outbidden ETHs */
@@ -331,16 +324,14 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit RefundWithdrawn(_paymentToken, msg.sender, amount);
     }
 
-    function withdrawBid(
-        uint256 listingId
-    ) external nonReentrant whenNotPaused {
-        Bid memory bid = currentBids[listingId];
+    function withdrawBid(uint256 _tokenId) external nonReentrant whenNotPaused {
+        Bid memory bid = currentBids[_tokenId];
         require(bid.bidder == msg.sender, "Not the current bidder");
 
-        _refundBid(listings[listingId].paymentToken, bid.bidder, bid.amount);
+        _refundBid(listings[_tokenId].paymentToken, bid.bidder, bid.amount);
 
-        delete currentBids[listingId];
-        emit BidWithdrawn(listingId, msg.sender);
+        delete currentBids[_tokenId];
+        emit BidWithdrawn(_tokenId, msg.sender);
     }
 
     function withdrawAdminEthEarnings() external onlyOwner nonReentrant {
