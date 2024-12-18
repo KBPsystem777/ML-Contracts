@@ -28,7 +28,6 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     uint256 public constant FEE_DENOMINATOR = 10000;
     uint256 public MAX_FEE = 500; // 5% Initial max admin fee
 
-    uint256 public listingCounter;
     uint256 public adminsEthEarnings;
     mapping(address => uint256) public adminsTokenEarnings;
     mapping(uint256 => Listing) public listings;
@@ -181,7 +180,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         );
         IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
 
-        listings[listingCounter] = Listing({
+        listings[tokenId] = Listing({
             seller: msg.sender,
             tokenId: tokenId,
             paymentToken: paymentToken,
@@ -190,14 +189,12 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         });
 
         emit ListingCreated(
-            listingCounter,
+            tokenId,
             msg.sender,
             tokenId,
             paymentToken,
             minPrice
         );
-
-        listingCounter++;
     }
     function cancelListing(
         uint256 _tokenId
@@ -224,7 +221,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         validPaymentToken(_paymentType)
     {
         Listing memory listing = listings[listingId];
-        require(amount >= listing.minPrice, "Bid below minimum price");
+        require(amount >= listing.minPrice, "Your bid is below minimum price");
 
         if (listing.paymentToken == address(0)) {
             // ETH payment
