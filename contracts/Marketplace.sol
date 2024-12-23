@@ -171,8 +171,9 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
 
     /*** Function to update the MAX_FEE. Max fee threshold is the highest percentage that the
      * marketplace could increase it's fee limit
+     * @param _newMaxFee New may fee value that should not be zero and higher than 900 (95%)
      */
-    function updateMaxFee(uint256 _newMaxFee) external onlyOwner {
+    function updateMaxFee(uint256 _newMaxFee) external onlyOwner whenNotPaused {
         // @note 900 == 9% maxFee
         require(
             _newMaxFee > 0 && _newMaxFee < 900,
@@ -183,6 +184,14 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit MaxFeeUpdated(_newMaxFee);
     }
 
+    /*** @notice Creating a listing - Sell your NFT property to Marketplace
+     * @dev Seller's should approve this marketplace contract as operator first.
+     * All NFTs to be listed will be held to this contract until the seller withdraws it
+     * or a buyer has bought it.
+     * @param tokenId TokenId of the NFT from MLRE contract
+     * @param paymentToken Type of payment. See token addresses of supported tokens. ETH defaults to address(0)
+     * @param minPrice Cost of the property/NFT
+     */
     function createListing(
         uint256 tokenId,
         address paymentToken,
@@ -211,6 +220,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
 
         emit ListingCreated(msg.sender, tokenId, paymentToken, minPrice);
     }
+
+    /*** @notice Cancelling the listing of a property. Once cancelled, the
+     * deposited NFT during the listing creation will be returned to the seller
+     * @param _tokenId TokenId of the property
+     */
     function cancelListing(
         uint256 _tokenId
     ) external whenNotPaused nonReentrant {
@@ -223,6 +237,13 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit ListingCancelled(_tokenId, msg.sender);
     }
 
+    /*** @notice Function to allow people to submit a bid on a listed property
+     * @dev This marketplace contract should be allowed as a token spender if payment type is token
+     * @dev Outbidden users can claim their refunds using withdrawTokenRefunds and withdrawEthRefunds functions
+     * @param _tokenId TokenId of the property
+     * @param _amount Bid amount. Bid amount should be equal or higher than the current sale valu of the listing
+     * @param _paymentType Mode of payment or token addresses, either ETH/tokens.
+     */
     function placeBid(
         uint256 _tokenId,
         uint256 _amount,
@@ -257,7 +278,8 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             "Bid must be higher than current bid"
         );
 
-        // Refund previous bidder
+        // @note There is a mechanism where bidders can outbid others
+        // @note Refund previous bidder
         if (currentBid.amount > 0) {
             _refundBid(
                 listing.paymentToken,
@@ -270,6 +292,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit BidPlaced(_tokenId, msg.sender, _amount);
     }
 
+    /*** @notice Function to accept the current bid on a property
+     * This can only be triggered by the seller of the listing
+     * @dev Once accepted, admin wallet will cut a fee from the total sale price
+     * @param _tokenId TokenId of the property
+     */
     function acceptBid(
         uint256 _tokenId
     ) external nonReentrant whenNotPaused isListingActive(_tokenId) {
@@ -312,12 +339,12 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit NFTSold(_tokenId, bid.bidder, listing.seller, bid.amount);
     }
 
-    /*** Allowing bidders to withdraw their outbidden ETHs */
+    /*** @notice Allowing bidders to withdraw their outbidden ETHs */
     function withdrawEthRefunds() external nonReentrant {
         uint256 amount = ethRefundsForBidders[msg.sender];
         require(amount > 0, "No refundable amount");
 
-        // Ensuring that the marketplace has enough ETH balance
+        // @note @dev Ensuring that the marketplace has enough ETH balance
         require(
             amount <= address(this).balance,
             "Insufficient contract balance"
@@ -332,7 +359,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit RefundWithdrawn(address(0), msg.sender, amount);
     }
 
-    /*** Allowing bidders to withdraw their outbidden tokens */
+    /*** @notice Allowing bidders to withdraw their outbidden tokens
+     * Tokens to be withdrawn here are only the supported types: MLIFE/USDT/USDC
+     * @param _paymentToken Contract address of the token to be withdrawn
+     */
     function withdrawTokenRefunds(address _paymentToken) external nonReentrant {
         uint256 amount = tokenRefundsForBidders[msg.sender][_paymentToken];
         require(amount > 0, "No refundable token");
@@ -376,7 +406,9 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         require(success, "ETH earnings transfer failed");
         emit AdminEthWithdrawals(owner(), earnings);
     }
-    /*** @notice Allowing admin to withdraw their token earnings: MLIFE/USDC/USDT */
+    /*** @notice Allowing admin to withdraw their token earnings: MLIFE/USDC/USDT
+     * @param _tokenAddress Contract address of the token to be withdrawn
+     */
     function withdrawAdminTokenEarnings(
         address _tokenAddress
     ) external onlyOwner nonReentrant {
@@ -388,6 +420,10 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit AdminTokenWithdrawals(owner(), _tokenAddress, tokenEarnings);
     }
 
+    /*** Internal function to handle refunds mapping for both ETH and token payments
+     * @dev This function facilitates the refunds for outbidden users and save them on mappings
+     * depending on the payment type
+     */
     function _refundBid(
         address paymentToken,
         address bidder,
@@ -403,3 +439,5 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit RefundIssued(bidder, paymentToken, amount);
     }
 }
+
+/// @thanks Built for ManageLife by Koleen Paunon - https://koleenbp.com
