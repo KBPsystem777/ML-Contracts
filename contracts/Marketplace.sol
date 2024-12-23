@@ -8,6 +8,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+/// @title ManageLife Marketplace
+/// @author https://managelife.io
+/// @notice This smart contract is used within the ManageLife ecosystem for buying and selling MLRE properties
+/// @dev A different marketplace contract needs to be built for the NFTi
 contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     struct Listing {
         address seller;
@@ -48,7 +52,11 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         uint256 minPrice
     );
     event ListingCancelled(uint256 _tokenId, address seller);
-    event BidPlaced(uint256 tokenId, address indexed bidder, uint256 amount);
+    event BidPlaced(
+        uint256 indexed tokenId,
+        address indexed bidder,
+        uint256 amount
+    );
     event BidWithdrawn(uint256 tokenId, address indexed bidder);
     event NFTSold(
         uint256 tokenId,
@@ -139,24 +147,38 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
 
     function updateMLifeTokenAddress(address _newAddress) external onlyOwner {
         require(_newAddress != address(0), "Invalid address");
+
+        address oldAddress = MLIFE;
         MLIFE = _newAddress;
-        emit MLifeTokenAddressUpdated(MLIFE, _newAddress);
+        emit MLifeTokenAddressUpdated(oldAddress, _newAddress);
     }
 
     function updateUsdtTokenAddress(address _newAddress) external onlyOwner {
         require(_newAddress != address(0), "Invalid address");
+
+        address oldAddress = tokenUSDT;
         tokenUSDT = _newAddress;
-        emit UsdtAddressUpdated(tokenUSDT, _newAddress);
+        emit UsdtAddressUpdated(oldAddress, _newAddress);
     }
 
     function updateUsdcTokenAddress(address _newAddress) external onlyOwner {
         require(_newAddress != address(0), "Invalid address");
+
+        address oldAddress = tokenUSDC;
         tokenUSDC = _newAddress;
-        emit UsdcAddressUpdated(tokenUSDC, _newAddress);
+        emit UsdcAddressUpdated(oldAddress, _newAddress);
     }
 
+    /*** Function to update the MAX_FEE. Max fee threshold is the highest percentage that the
+     * marketplace could increase it's fee limit
+     */
     function updateMaxFee(uint256 _newMaxFee) external onlyOwner {
-        require(_newMaxFee > 0, "Invalid max fee input");
+        // @note 900 == 9% maxFee
+        require(
+            _newMaxFee > 0 && _newMaxFee < 900,
+            "Fee must be > 0 and < 900"
+        );
+
         MAX_FEE = _newMaxFee;
         emit MaxFeeUpdated(_newMaxFee);
     }
@@ -268,12 +290,12 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
             (bool success, ) = listing.seller.call{value: sellerProceeds}("");
             require(success, "ETH transfer to seller failed");
         } else {
+            adminsTokenEarnings[listing.paymentToken] += fee;
             // Token payment
             IERC20(listing.paymentToken).safeTransfer(
                 listing.seller,
                 sellerProceeds
             );
-            adminsTokenEarnings[listing.paymentToken] += fee;
         }
 
         // Transfer NFT
@@ -294,6 +316,8 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     function withdrawEthRefunds() external nonReentrant {
         uint256 amount = ethRefundsForBidders[msg.sender];
         require(amount > 0, "No refundable amount");
+
+        // Ensuring that the marketplace has enough ETH balance
         require(
             amount <= address(this).balance,
             "Insufficient contract balance"
@@ -312,6 +336,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
     function withdrawTokenRefunds(address _paymentToken) external nonReentrant {
         uint256 amount = tokenRefundsForBidders[msg.sender][_paymentToken];
         require(amount > 0, "No refundable token");
+        // Ensuring first that the marketplace contract has enough token balance
         require(
             IERC20(_paymentToken).balanceOf(address(this)) >= amount,
             "Insufficient Marketplace's token balance"
@@ -324,6 +349,12 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit RefundWithdrawn(_paymentToken, msg.sender, amount);
     }
 
+    /*** @notice Function to allow bidders to withdraw their bid.
+     * @dev This is also a mechanism for bidders
+     * to get their deposited ETH or tokens in the contract. All withdrawn assets (ETH/tokens)
+     * will be placed under ethRefundsForBidders or tokenRefundsForBidders mappings
+     * @param _tokenId NFT's tokenID
+     */
     function withdrawBid(uint256 _tokenId) external nonReentrant whenNotPaused {
         Bid memory bid = currentBids[_tokenId];
         require(bid.bidder == msg.sender, "Not the current bidder");
@@ -334,6 +365,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         emit BidWithdrawn(_tokenId, msg.sender);
     }
 
+    /*** @notice Allowing admin to withdraw their ETH earnings */
     function withdrawAdminEthEarnings() external onlyOwner nonReentrant {
         uint256 earnings = adminsEthEarnings;
         require(earnings > 0, "No ETH to withdraw");
@@ -344,7 +376,7 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         require(success, "ETH earnings transfer failed");
         emit AdminEthWithdrawals(owner(), earnings);
     }
-
+    /*** @notice Allowing admin to withdraw their token earnings: MLIFE/USDC/USDT */
     function withdrawAdminTokenEarnings(
         address _tokenAddress
     ) external onlyOwner nonReentrant {
@@ -354,25 +386,6 @@ contract Marketplace is ReentrancyGuard, Ownable, Pausable {
         adminsTokenEarnings[_tokenAddress] = 0;
         IERC20(_tokenAddress).transfer(owner(), tokenEarnings);
         emit AdminTokenWithdrawals(owner(), _tokenAddress, tokenEarnings);
-    }
-
-    function adminEmergencyWithdrawal(
-        address _token
-    ) external onlyOwner nonReentrant {
-        if (_token == address(0)) {
-            uint256 balance = address(this).balance;
-            require(balance > 0, "No ETH to withdraw");
-            adminsEthEarnings = 0;
-
-            // Safe ETH transfer
-            (bool success, ) = msg.sender.call{value: balance}("");
-            require(success, "Emergency ETH transfer failed");
-        } else {
-            uint256 balance = IERC20(_token).balanceOf(address(this));
-            require(balance > 0, "No token balance to withdraw");
-            adminsTokenEarnings[_token] = 0;
-            IERC20(_token).safeTransfer(msg.sender, balance);
-        }
     }
 
     function _refundBid(

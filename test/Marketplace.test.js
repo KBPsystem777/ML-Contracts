@@ -1,204 +1,123 @@
+const { expect } = require("chai")
 const { ethers } = require("hardhat")
-const { assert, expect } = require("chai")
 
-describe(" >>> ML Marketplace test Items >>>", function () {
-  let token, signerAddress
+describe("Marketplace Smart Contract", function () {
+  let marketplace, nft, token, owner, seller, bidder1, bidder2
 
-  before("Deploy the contract instance first", async () => {
-    const Token = await ethers.getContractFactory("Life")
-    token = await Token.deploy()
-    await token.deployed()
+  before(async function () {
+    ;[owner, seller, bidder1, bidder2] = await ethers.getSigners()
 
-    // ManageLife NFT initialization
-    const NFT = await ethers.getContractFactory("ManageLife")
-    nft = await NFT.deploy()
+    // Deploy mock NFT contract
+    const NFTMock = await ethers.getContractFactory("ERC721Mock")
+    nft = await NFTMock.deploy("MockNFT", "MNFT")
     await nft.deployed()
 
-    // NFTi initialization
-    const ML_NFTI = await ethers.getContractFactory("ManageLifeInvestorsNFT")
-    mlNfti = await ML_NFTI.deploy()
-    await mlNfti.deployed()
+    // Mint some NFTs to the seller
+    await nft.connect(seller).mint(seller.address, 1)
+    await nft.connect(seller).mint(seller.address, 2)
 
-    // Marketplace initialization
+    // Deploy mock ERC20 token
+    const ERC20Mock = await ethers.getContractFactory("ERC20Mock")
+    token = await ERC20Mock.deploy(
+      "MockToken",
+      "MTKN",
+      ethers.utils.parseEther("1000")
+    )
+    await token.deployed()
+
+    // Deploy marketplace
     const Marketplace = await ethers.getContractFactory("Marketplace")
-    market = await Marketplace.deploy()
-    await market.deployed()
-    signer = ethers.provider.getSigner(0)
+    marketplace = await Marketplace.deploy(
+      nft.address,
+      token.address,
+      token.address,
+      token.address
+    )
+    await marketplace.deployed()
 
-    const nftiAddress = mlNfti.address
-    const nftAddress = nft.address
-    const tokenAddress = token.address
-    const marketplaceAddress = market.address
+    // Approve NFTs for the marketplace
+    await nft.connect(seller).setApprovalForAll(marketplace.address, true)
+  })
 
-    // Get signer address
-    console.log(
-      `
-      Pre-deployed contracts:
-      > $LIFE Contract Address: ${tokenAddress}
-      > MLIFE NFT Contract Address: ${nftAddress}
-      > NFTi Contract Address: ${nftiAddress}
-      > ML Marketplace Address: ${marketplaceAddress}
-      `
+  it("Should create a listing", async function () {
+    await marketplace
+      .connect(seller)
+      .createListing(1, token.address, ethers.utils.parseEther("10"))
+
+    const listing = await marketplace.listings(0)
+    expect(listing.seller).to.equal(seller.address)
+    expect(listing.tokenId).to.equal(1)
+    expect(listing.minPrice).to.equal(ethers.utils.parseEther("10"))
+  })
+
+  it("Should place a bid", async function () {
+    await token
+      .connect(bidder1)
+      .approve(marketplace.address, ethers.utils.parseEther("20"))
+    await marketplace
+      .connect(bidder1)
+      .placeBid(0, ethers.utils.parseEther("15"), token.address)
+
+    const bid = await marketplace.currentBids(0)
+    expect(bid.bidder).to.equal(bidder1.address)
+    expect(bid.amount).to.equal(ethers.utils.parseEther("15"))
+  })
+
+  it("Should accept a bid and transfer NFT", async function () {
+    await marketplace.connect(seller).acceptBid(0)
+
+    const newOwner = await nft.ownerOf(1)
+    expect(newOwner).to.equal(bidder1.address)
+  })
+
+  it("Should cancel a listing", async function () {
+    await marketplace.connect(seller).createListing(
+      2,
+      ethers.constants.AddressZero, // ETH
+      ethers.utils.parseEther("5")
     )
 
-    // Get signer address
-    ;[signerAddress] = await ethers.provider.listAccounts()
+    await marketplace.connect(seller).cancelListing(2)
+    const listing = await marketplace.listings(2)
+    expect(listing.active).to.be.false
   })
 
-  it("Should set the contract owner to equal the deployer address", async () => {
-    assert.equal(await token.owner(), signerAddress)
+  it("Should pause and unpause the contract", async function () {
+    await marketplace.connect(owner).pause()
+    await expect(
+      marketplace
+        .connect(seller)
+        .createListing(1, token.address, ethers.utils.parseEther("10"))
+    ).to.be.revertedWith("Pausable: paused")
+
+    await marketplace.connect(owner).unpause()
+    await marketplace
+      .connect(seller)
+      .createListing(1, token.address, ethers.utils.parseEther("10"))
   })
 
-  it("Should build the integration among contracts", async () => {
-    // Life token
-    await token.setNftiToken(mlNfti.address)
-    await token.setManageLifeToken(nft.address)
-    expect(await token.manageLifeToken()).to.be.not.null
-    expect(await token.manageLifeInvestorsNft()).to.be.not.null
-    assert.equal(await token.manageLifeToken(), nft.address)
-    assert.equal(await token.manageLifeInvestorsNft(), mlNfti.address)
-
-    // MangeLife NFT
-    await nft.setLifeToken(token.address)
-    await nft.setMarketplace(market.address)
-    expect(await nft.lifeToken()).to.be.not.null
-    expect(await nft.marketplace()).to.be.not.null
-    assert.equal(await nft.lifeToken(), token.address)
-    assert.equal(await nft.marketplace(), market.address)
-
-    // Marketplace
-    await market.setNftContract(nft.address)
-    expect(await market.mlifeAddress()).to.be.not.null
-    assert.equal(await market.mlifeAddress(), nft.address)
-
-    // NFTi
-    await mlNfti.setLifeToken(token.address)
-    expect(await mlNfti.setLifeToken(token.address)).to.be.not.null
-    assert.equal(await mlNfti.lifeToken(), token.address)
+  it("Should update marketplace fee", async function () {
+    await marketplace.connect(owner).updateMarketplaceFee(300) // 3%
+    const fee = await marketplace.marketplaceFee()
+    expect(fee).to.equal(300)
   })
 
-  it("Should display the correct Percents Divider", async () => {
-    // Get current Percents divider
-    const divider = await market.PERCENTS_DIVIDER()
+  it("Should handle refunds", async function () {
+    await token
+      .connect(bidder1)
+      .approve(marketplace.address, ethers.utils.parseEther("10"))
+    await marketplace
+      .connect(bidder1)
+      .placeBid(1, ethers.utils.parseEther("10"), token.address)
 
-    // Run tests
-    assert.equal(divider.toString(), "10000")
-    expect(divider.toString()).to.not.throw
-    expect(divider.toString()).to.be.string
-    expect(divider.toString()).to.not.be.null
-    expect(divider.toString()).to.not.undefined
-  })
-  it("Should display the correct Admin Percent", async () => {
-    // Get the current admin percent
-    const adminPercent = await market.adminPercent()
+    await marketplace
+      .connect(bidder2)
+      .placeBid(1, ethers.utils.parseEther("15"), token.address)
 
-    // Run tests
-    assert.equal(adminPercent, "200")
-    expect(adminPercent.toString()).to.not.throw
-    expect(adminPercent.toString()).to.be.string
-    expect(adminPercent.toString()).to.not.be.null
-    expect(adminPercent.toString()).to.not.undefined
-
-    // New test: Update the admin percent
-    // Update the admin percent to 333
-    const newAdminPercent = await market.setAdminPercent("333")
-
-    // Get the value of the updated admin percent
-    const updatedAdminPercent = await market.adminPercent()
-
-    // Run tests
-    assert.equal(updatedAdminPercent, "333")
-    expect(updatedAdminPercent.toString()).to.not.throw
-    expect(updatedAdminPercent.toString()).to.be.string
-    expect(updatedAdminPercent.toString()).to.not.be.null
-    expect(updatedAdminPercent.toString()).to.not.undefined
-  })
-  it("Should perform sale offerings", async () => {
-    // Pre-mint the NFTs to be put into bid
-    await nft.mint(ethers.utils.parseEther("1"), "1000000000000000000")
-
-    // Setting the trading to false to allow the admins to trade on behalf of the owner
-    await market.setTrading(false)
-
-    // Transfer the NFT to an address
-    // On success, NFT #1 will be created
-    await nft["safeTransferFrom(address,address,uint256)"](
-      await nft.owner(),
-      "0xD10E6200590067b1De5240795F762B43C8e4Cc08",
-      ethers.utils.parseEther("1")
+    const refund = await marketplace.tokenRefundsForBidders(
+      token.address,
+      bidder1.address
     )
-
-    // Offer the NFT#1 for sale
-    await market.offerForSale(
-      ethers.utils.parseEther("1"),
-      ethers.utils.parseEther("0.0101714")
-    )
-
-    // Run tests
-    // Making sure that the Offers struct will be updated with the new offer
-    const offers = await market.offers(ethers.utils.parseEther("1"))
-
-    // Making sure that offer #1 is forSale
-    assert.equal(offers[0], true)
-
-    // Making sure that the seller of offer #1 is correct
-    assert.equal(offers[2], "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
-  })
-
-  it("Should perform bid", async () => {
-    // Pre-mint the NFTs to be put into bid
-    await nft.mint(ethers.utils.parseEther("1017"), "1000000000000000000")
-
-    // Setting the trading to false to allow the admins to trade on behalf of the owner
-    await market.setTrading(false)
-
-    // Transfer the NFT to an address
-    // On success, NFT #12 will be created
-    await nft["safeTransferFrom(address,address,uint256)"](
-      await nft.owner(),
-      "0xD10E6200590067b1De5240795F762B43C8e4Cc08",
-      ethers.utils.parseEther("1017")
-    )
-
-    // Offer the NFT #12 for sale
-    await market.placeBid(ethers.utils.parseEther("1017"), {
-      value: ethers.utils.parseEther("0.002"),
-    })
-
-    // Submit mock bid for NFT #1
-    const bid = await market.bids(ethers.utils.parseEther("1017"))
-
-    // Run tests -- Making sure that the Bids struct will be updated with the new bid
-    // Making sure the bid variable contains the correct bidder address
-    assert.equal(bid[1], await market.owner())
-    expect(bid).to.contains(bid[1])
-  })
-
-  it("Should be able to change the trading status", async () => {
-    // Get the current trading status
-    // Should return false
-    const isAllowedTrading = await market.allowTrading()
-
-    // Change the trading status to true
-    await market.setTrading(true)
-
-    // Run tests to make sure trading status has been changed
-    assert.notEqual(isAllowedTrading, market.allowTrading())
-    assert.equal(await market.allowTrading(), true)
-  })
-
-  it("Should be able to change the ML Admin", async () => {
-    // Get the current market admin
-    const currentAdmin = await market.mlAdmin()
-
-    // Change the market admin
-    await market.setMLAdmin("0x1fcb2d8E0420fd4DA92979446AB247bbaA5a958a")
-
-    // Test to make sure market admin has been changed
-    assert.notEqual(currentAdmin, await market.mlAdmin())
-    assert.equal(
-      await market.mlAdmin(),
-      "0x1fcb2d8E0420fd4DA92979446AB247bbaA5a958a"
-    )
+    expect(refund).to.equal(ethers.utils.parseEther("10"))
   })
 })
