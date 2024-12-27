@@ -1,350 +1,443 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./ManageLife.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/**
- * @notice Marketplace contract for ManageLife.
- * This contract the market trading of NFTs in the ML ecosystem.
- * In real life, an NFT here represents a home or real-estate property
- * run by ManageLife.
- *
- * @author https://managelife.co
- */
-contract Marketplace is ReentrancyGuard, Pausable, Ownable {
-    /// @notice Deployer address will be considered as the ML admins
-    constructor() {}
-
-    /// Percent divider to calculate ML's transaction earnings.
-    uint256 public constant PERCENTS_DIVIDER = 10000;
-
-    /** @notice Trading status. This determines if normal users will be
-     * allowed to permitted to perform market trading (Bidding, Selling, Buy).
-     * By default Admin wallet will perform all these functions on behalf of all customers
-     * due to legal requirements.
-     * Once legal landscape permits, customers will be able to perform market trading by themselves.
-     */
-    bool public allowTrading = false;
-
-    /// instance of the MLRE NFT contract.
-    ManageLife public mLife;
-
-    struct Offer {
-        uint256 tokenId;
+/// @title ManageLife Marketplace
+/// @author https://managelife.io
+/// @notice This smart contract is used within the ManageLife ecosystem for buying and selling MLRE properties
+/// @dev A different marketplace contract needs to be built for the NFTi
+contract Marketplace is ReentrancyGuard, Ownable, Pausable {
+    struct Listing {
         address seller;
-        uint256 price;
-        address offeredTo;
+        uint256 tokenId;
+        address paymentToken; // ETH is represented by address(0)
+        uint256 minPrice;
+        bool active;
     }
 
     struct Bid {
         address bidder;
-        uint256 value;
+        uint256 amount;
     }
 
-    /// @notice Default admin fee. 200 initial value is equals to 2%
-    uint256 public adminPercent = 200;
+    using SafeERC20 for IERC20;
 
-    /// Status for adming pending claimable earnings.
-    uint256 public adminPending;
+    uint256 public marketplaceFee = 200; // 2% scaled
+    uint256 public constant FEE_DENOMINATOR = 10000;
+    uint256 public MAX_FEE = 500; // 5% Initial max admin fee
 
-    /// Mapping of MLRE tokenIds to Offers
-    mapping(uint256 => Offer) public offers;
+    uint256 public adminsEthEarnings;
+    mapping(address => uint256) public adminsTokenEarnings;
+    mapping(uint256 => Listing) public listings;
+    mapping(uint256 => Bid) public currentBids;
+    mapping(address => uint256) public ethRefundsForBidders;
+    mapping(address => mapping(address => uint256))
+        public tokenRefundsForBidders;
 
-    /// Mapping of MLRE tokenIds to Bids
-    mapping(uint256 => Bid) public bids;
+    address public MLIFE;
+    address public tokenUSDT;
+    address public tokenUSDC;
+    address public nftContract;
 
-    event Offered(
+    event ListingCreated(
+        address indexed seller,
         uint256 indexed tokenId,
-        uint256 price,
-        address indexed toAddress
+        address paymentToken,
+        uint256 minPrice
+    );
+    event ListingCancelled(uint256 _tokenId, address seller);
+    event BidPlaced(
+        uint256 indexed tokenId,
+        address indexed bidder,
+        uint256 amount
+    );
+    event BidWithdrawn(uint256 tokenId, address indexed bidder);
+    event NFTSold(
+        uint256 tokenId,
+        address indexed buyer,
+        address indexed seller,
+        uint256 price
+    );
+    event AdminEthWithdrawals(address _admin, uint256 _amount);
+    event AdminTokenWithdrawals(
+        address _admin,
+        address _token,
+        uint256 _amount
+    );
+    event RefundIssued(address _receiver, address _tokenType, uint256 _amount);
+    event MarketplaceFeeUpdated(uint256 newFee);
+    event NftAddressUpdated(address _oldAddress, address _newAddress);
+    event MLifeTokenAddressUpdated(address _oldAddress, address _newAddress);
+    event UsdcAddressUpdated(address _oldAddress, address _newAddress);
+    event UsdtAddressUpdated(address _oldAddress, address _newAddress);
+    event MaxFeeUpdated(uint256 _newMaxFee);
+    event RefundWithdrawn(
+        address _paymentType,
+        address _receiver,
+        uint256 _amount
     );
 
-    event BidEntered(
-        uint256 indexed tokenId,
-        uint256 value,
-        address indexed fromAddress
-    );
+    event Paused();
+    event Unpaused();
 
-    event BidCancelled(
-        uint256 indexed tokenId,
-        uint256 value,
-        address indexed bidder
-    );
+    modifier onlyNFTOwner(uint256 tokenId) {
+        require(
+            IERC721(nftContract).ownerOf(tokenId) == msg.sender,
+            "Not NFT owner"
+        );
+        _;
+    }
 
-    event Bought(
-        uint256 indexed tokenId,
-        uint256 value,
-        address indexed fromAddress,
-        address indexed toAddress,
-        bool isInstant
-    );
-    event BidWithdrawn(uint256 indexed tokenId, uint256 value);
-    event Cancelled(uint256 indexed tokenId);
-    event TradingStatus(bool _isTradingAllowed);
-    event Received(address, uint);
+    modifier validPaymentToken(address token) {
+        require(
+            token == address(0) ||
+                token == MLIFE ||
+                token == tokenUSDT ||
+                token == tokenUSDC,
+            "Unsupported payment token"
+        );
+        _;
+    }
 
-    error InvalidPercent(uint256 _percent, uint256 minimumPercent);
+    modifier isListingActive(uint256 _tokenId) {
+        require(listings[_tokenId].active, "Listing not active");
+        _;
+    }
 
-    /// @notice Security feature to Pause smart contracts transactions
-    function pause() external whenNotPaused onlyOwner {
+    constructor(
+        address _nftContract,
+        address _MLIFE,
+        address _tokenUSDT,
+        address _tokenUSDC
+    ) Ownable(msg.sender) ReentrancyGuard() Pausable() {
+        nftContract = _nftContract;
+        MLIFE = _MLIFE;
+        tokenUSDT = _tokenUSDT;
+        tokenUSDC = _tokenUSDC;
+    }
+
+    function pause() external onlyOwner {
         _pause();
     }
 
-    /// @notice Unpausing the Paused transactions feature.
-    function unpause() external whenPaused onlyOwner {
+    function unpause() external onlyOwner {
         _unpause();
     }
 
-    /**
-     * @notice Update the `allowTrading` status to true/false.
-     * @dev Can only be executed by contract owner. Will emit TradingStatus event.
-     * @param _isTradingAllowed New boolean status to set.
-     */
-    function setTrading(bool _isTradingAllowed) external onlyOwner {
-        allowTrading = _isTradingAllowed;
-        emit TradingStatus(_isTradingAllowed);
+    function updateMarketplaceFee(
+        uint256 _newFee
+    ) external onlyOwner whenNotPaused {
+        require(_newFee > 0, "Invalid fee update");
+        require(_newFee <= MAX_FEE, "Fee exceeds threshold");
+        marketplaceFee = _newFee;
+        emit MarketplaceFeeUpdated(_newFee);
     }
 
-    /**
-     * @notice Set the MLRE contract.
-     * @dev Important to set this after deployment. Only MLRE address is needed.
-     * Will not access 0x0 (zero/invalid) address.
-     * @param nftAddress Address of MLRE contract.
-     */
-    function setNftContract(address nftAddress) external onlyOwner {
-        require(nftAddress != address(0x0), "Zero address");
-        mLife = ManageLife(nftAddress);
+    function updateNftContract(address _newAddress) external onlyOwner {
+        require(_newAddress != address(0), "Invalid address");
+        nftContract = _newAddress;
+        emit NftAddressUpdated(nftContract, _newAddress);
     }
 
-    /**
-     * @notice Allows admin wallet to set new percentage fee.
-     * @dev This throws an error is the new percentage is less than 500.
-     * @param _percent New admin percentage.
-     */
-    function setAdminPercent(uint256 _percent) external onlyOwner {
-        if (_percent < 500) {
-            revert InvalidPercent({_percent: _percent, minimumPercent: 500});
-        }
-        adminPercent = _percent;
+    function updateMLifeTokenAddress(address _newAddress) external onlyOwner {
+        require(_newAddress != address(0), "Invalid address");
+
+        address oldAddress = MLIFE;
+        MLIFE = _newAddress;
+        emit MLifeTokenAddressUpdated(oldAddress, _newAddress);
     }
 
-    /**
-     * @notice Withdraw marketplace earnings.
-     * @dev Can only be triggered by the admin wallet or contract owner.
-     * This will transfer the market earnings to the admin wallet.
-     */
-    function withdraw() external onlyOwner nonReentrant {
-        uint256 amount = adminPending;
-        adminPending = 0;
-        _safeTransferETH(owner(), amount);
+    function updateUsdtTokenAddress(address _newAddress) external onlyOwner {
+        require(_newAddress != address(0), "Invalid address");
+
+        address oldAddress = tokenUSDT;
+        tokenUSDT = _newAddress;
+        emit UsdtAddressUpdated(oldAddress, _newAddress);
     }
 
-    /**
-     * @notice Cancel the existing sale offer.
-     *
-     * @dev Once triggered, the offer struct for this tokenId will be destroyed.
-     * Can only be called by MLRE holders. The caller of this function should be
-     * the owner if the NFT in MLRE contract.
-     *
-     * @param tokenId TokenId of the NFT.
-     */
-    function cancelForSale(uint256 tokenId) external {
-        require(msg.sender == mLife.ownerOf(tokenId), "Unathorized");
-        delete offers[tokenId];
-        emit Cancelled(tokenId);
+    function updateUsdcTokenAddress(address _newAddress) external onlyOwner {
+        require(_newAddress != address(0), "Invalid address");
+
+        address oldAddress = tokenUSDC;
+        tokenUSDC = _newAddress;
+        emit UsdcAddressUpdated(oldAddress, _newAddress);
     }
 
-    /**
-     * @notice Offer a property or NFT for sale in the marketplace.
-     * @param tokenId MLRE tokenId to be put on sale.
-     * @param minSalePrice Minimum sale price of the property.
+    /*** Function to update the MAX_FEE. Max fee threshold is the highest percentage that the
+     * marketplace could increase it's fee limit
+     * @param _newMaxFee New may fee value that should not be zero and higher than 900 (95%)
      */
-    function offerForSale(
+    function updateMaxFee(uint256 _newMaxFee) external onlyOwner whenNotPaused {
+        // @note 900 == 9% maxFee
+        require(
+            _newMaxFee > 0 && _newMaxFee < 900,
+            "Fee must be > 0 and < 900"
+        );
+
+        MAX_FEE = _newMaxFee;
+        emit MaxFeeUpdated(_newMaxFee);
+    }
+
+    /*** @notice Creating a listing - Sell your NFT property to Marketplace
+     * @dev Seller's should approve this marketplace contract as operator first.
+     * All NFTs to be listed will be held to this contract until the seller withdraws it
+     * or a buyer has bought it.
+     * @param tokenId TokenId of the NFT from MLRE contract
+     * @param paymentToken Type of payment. See token addresses of supported tokens. ETH defaults to address(0)
+     * @param minPrice Cost of the property/NFT
+     */
+    function createListing(
         uint256 tokenId,
-        uint256 minSalePrice
-    ) external whenNotPaused isTradingAllowed {
+        address paymentToken,
+        uint256 minPrice
+    )
+        external
+        whenNotPaused
+        onlyNFTOwner(tokenId)
+        validPaymentToken(paymentToken)
+    {
+        require(minPrice > 0, "Price should not be zero");
         require(
-            msg.sender == mLife.ownerOf(tokenId),
-            "You do not own this MLRE"
+            IERC721(nftContract).isApprovedForAll(msg.sender, address(this)) ||
+                IERC721(nftContract).getApproved(tokenId) == address(this),
+            "NFT Approval required"
         );
-        offers[tokenId] = Offer(
-            tokenId,
-            msg.sender,
-            minSalePrice,
-            address(0x0)
-        );
-        emit Offered(tokenId, minSalePrice, address(0x0));
+        IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
+
+        listings[tokenId] = Listing({
+            seller: msg.sender,
+            tokenId: tokenId,
+            paymentToken: paymentToken,
+            minPrice: minPrice,
+            active: true
+        });
+
+        emit ListingCreated(msg.sender, tokenId, paymentToken, minPrice);
     }
 
-    /**
-     * @notice Offer a property for sale to a specific wallet address only.
-     * @param tokenId TokenId of the property to be offered.
-     * @param minSalePrice Minimum sale prices of the property.
-     * @param toAddress Wallet address on where the property will be offered to.
+    /*** @notice Cancelling the listing of a property. Once cancelled, the
+     * deposited NFT during the listing creation will be returned to the seller
+     * @param _tokenId TokenId of the property
      */
-    function offerForSaleToAddress(
-        uint256 tokenId,
-        uint256 minSalePrice,
-        address toAddress
-    ) external whenNotPaused isTradingAllowed {
-        require(
-            msg.sender == mLife.ownerOf(tokenId),
-            "You do not own this MLRE"
-        );
-        offers[tokenId] = Offer(tokenId, msg.sender, minSalePrice, toAddress);
-        emit Offered(tokenId, minSalePrice, toAddress);
+    function cancelListing(
+        uint256 _tokenId
+    ) external whenNotPaused nonReentrant {
+        require(listings[_tokenId].active, "Listing not active");
+        require(listings[_tokenId].seller == msg.sender, "Not listing owner");
+
+        // Transferring back the NFT to the owner
+        IERC721(nftContract).transferFrom(address(this), msg.sender, _tokenId);
+        delete listings[_tokenId];
+        emit ListingCancelled(_tokenId, msg.sender);
     }
 
-    /**
-     * @notice Allows users to buy a property that is registered in ML.
-     * @dev Anyone (public) can buy an MLRE property.
-     * @param tokenId TokenId of the property.
-     */
-    function buy(
-        uint256 tokenId
-    ) external payable whenNotPaused isTradingAllowed {
-        Offer memory offer = offers[tokenId];
-        require(
-            offer.offeredTo == address(0x0) || offer.offeredTo == msg.sender,
-            "This offer is not for you"
-        );
-
-        uint256 amount = msg.value;
-        require(amount == offer.price, "Not enough ether");
-        address seller = offer.seller;
-        require(seller != msg.sender, "Seller == msg.sender");
-
-        offers[tokenId] = Offer(tokenId, msg.sender, 0, address(0x0));
-
-        /// Transfer to msg.sender from seller.
-        mLife.transferFrom(seller, msg.sender, tokenId);
-
-        /// Transfer commission to admin!
-        uint256 commission = 0;
-        if (adminPercent > 0) {
-            commission = (amount * adminPercent) / PERCENTS_DIVIDER;
-            adminPending += commission;
-        }
-
-        /// Transfer ETH to seller!
-        _safeTransferETH(seller, amount - commission);
-
-        emit Bought(tokenId, amount, seller, msg.sender, true);
-
-        /// Refund bid if new owner is buyer
-        Bid memory bid = bids[tokenId];
-        if (bid.bidder == msg.sender) {
-            _safeTransferETH(bid.bidder, bid.value);
-            emit BidCancelled(tokenId, bid.value, bid.bidder);
-            bids[tokenId] = Bid(address(0x0), 0);
-        }
-    }
-
-    /**
-     * @notice Allows users to submit a bid to any offered properties.
-     * @dev Anyone in public can submit a bid on a property, either MLRE holder of not.
-     * @param tokenId tokenId of the property.
+    /*** @notice Function to allow people to submit a bid on a listed property
+     * @dev This marketplace contract should be allowed as a token spender if payment type is token
+     * @dev Outbidden users can claim their refunds using withdrawTokenRefunds and withdrawEthRefunds functions
+     * @param _tokenId TokenId of the property
+     * @param _amount Bid amount. Bid amount should be equal or higher than the current sale valu of the listing
+     * @param _paymentType Mode of payment or token addresses, either ETH/tokens.
      */
     function placeBid(
-        uint256 tokenId
-    ) external payable whenNotPaused nonReentrant isTradingAllowed {
-        require(msg.value != 0, "Cannot enter bid of zero");
-        Bid memory existing = bids[tokenId];
-        require(msg.value > existing.value, "Your bid is too low");
-        if (existing.value > 0) {
-            /// @dev If there is a new bid on a property and the last one got out bids, that previous one's
-            /// Ether sent to the contract will be refunded to their wallet.
-            _safeTransferETH(existing.bidder, existing.value);
-            emit BidCancelled(tokenId, existing.value, existing.bidder);
+        uint256 _tokenId,
+        uint256 _amount,
+        address _paymentType
+    )
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+        isListingActive(_tokenId)
+        validPaymentToken(_paymentType)
+    {
+        Listing memory listing = listings[_tokenId];
+        require(_amount >= listing.minPrice, "Your bid is below minimum price");
+
+        if (listing.paymentToken == address(0)) {
+            // ETH payment
+            require(msg.value == _amount, "Incorrect ETH sent");
+        } else {
+            // Token payment
+            bool success = IERC20(listing.paymentToken).transferFrom(
+                msg.sender,
+                address(this),
+                _amount
+            );
+            require(success, "Token transfer failed");
         }
-        bids[tokenId] = Bid(msg.sender, msg.value);
-        emit BidEntered(tokenId, msg.value, msg.sender);
+
+        Bid memory currentBid = currentBids[_tokenId];
+        require(
+            _amount > currentBid.amount,
+            "Bid must be higher than current bid"
+        );
+
+        // @note There is a mechanism where bidders can outbid others
+        // @note Refund previous bidder
+        if (currentBid.amount > 0) {
+            _refundBid(
+                listing.paymentToken,
+                currentBid.bidder,
+                currentBid.amount
+            );
+        }
+
+        currentBids[_tokenId] = Bid({bidder: msg.sender, amount: _amount});
+        emit BidPlaced(_tokenId, msg.sender, _amount);
     }
 
-    /**
-     * @notice Allows home owners to accept bids submitted on their properties
-     * @param tokenId tokenId of the property.
-     * @param minPrice Minimum bidding price.
+    /*** @notice Function to accept the current bid on a property
+     * This can only be triggered by the seller of the listing
+     * @dev Once accepted, admin wallet will cut a fee from the total sale price
+     * @param _tokenId TokenId of the property
      */
     function acceptBid(
-        uint256 tokenId,
-        uint256 minPrice
-    ) external whenNotPaused isTradingAllowed {
-        require(
-            msg.sender == mLife.ownerOf(tokenId),
-            "You do not own this MLRE"
-        );
-        address seller = msg.sender;
-        Bid memory bid = bids[tokenId];
-        uint256 amount = bid.value;
-        require(amount != 0, "Cannot enter bid of zero");
-        require(amount >= minPrice, "The bid is too low");
+        uint256 _tokenId
+    ) external nonReentrant whenNotPaused isListingActive(_tokenId) {
+        Listing storage listing = listings[_tokenId];
+        Bid memory bid = currentBids[_tokenId];
 
-        address bidder = bid.bidder;
-        require(seller != bidder, "You already own this token");
+        require(listing.seller == msg.sender, "Only seller can accept bid");
+        require(bid.amount > 0, "No active bid");
 
-        offers[tokenId] = Offer(tokenId, bidder, 0, address(0x0));
-        bids[tokenId] = Bid(address(0x0), 0);
+        uint256 fee = (bid.amount * marketplaceFee) / FEE_DENOMINATOR;
+        adminsEthEarnings += fee;
+        uint256 sellerProceeds = bid.amount - fee;
 
-        /// Transfer MLRE NFT to the Bidder
-        mLife.transferFrom(msg.sender, bidder, tokenId);
-
-        uint256 commission = 0;
-        /// Transfer Commission to admin wallet
-        if (adminPercent > 0) {
-            commission = (amount * adminPercent) / PERCENTS_DIVIDER;
-            adminPending += commission;
+        // Distribute proceeds
+        if (listing.paymentToken == address(0)) {
+            // ETH payment
+            // Safe ETH transfer
+            (bool success, ) = listing.seller.call{value: sellerProceeds}("");
+            require(success, "ETH transfer to seller failed");
+        } else {
+            adminsTokenEarnings[listing.paymentToken] += fee;
+            // Token payment
+            IERC20(listing.paymentToken).safeTransfer(
+                listing.seller,
+                sellerProceeds
+            );
         }
 
-        /// Transfer ETH to seller
-        _safeTransferETH(seller, amount - commission);
-
-        emit Bought(tokenId, bid.value, seller, bidder, false);
-    }
-
-    /**
-     * @notice Allows bidders to withdraw their bid on a specific property.
-     * @param tokenId tokenId of the property that is currently being bid.
-     */
-    function withdrawBid(
-        uint256 tokenId
-    ) external nonReentrant isTradingAllowed {
-        Bid memory bid = bids[tokenId];
-        require(bid.bidder == msg.sender, "The Sender is not original bidder");
-        uint256 amount = bid.value;
-        emit BidWithdrawn(tokenId, amount);
-        bids[tokenId] = Bid(address(0x0), 0);
-        _safeTransferETH(msg.sender, amount);
-    }
-
-    /**
-     * @dev This records the address and ether value that was sent to the Marketplace
-     */
-    receive() external payable {
-        emit Received(msg.sender, msg.value);
-    }
-
-    /// @dev Eth transfer hook
-    function _safeTransferETH(address to, uint256 value) internal {
-        (bool success, ) = to.call{value: value}("");
-        require(
-            success,
-            "Address: unable to send value, recipient may have reverted"
+        // Transfer NFT
+        IERC721(nftContract).transferFrom(
+            address(this),
+            bid.bidder,
+            listing.tokenId
         );
+
+        // Deleting listings and bids
+        delete listings[_tokenId];
+        delete currentBids[_tokenId];
+
+        emit NFTSold(_tokenId, bid.bidder, listing.seller, bid.amount);
     }
 
-    /**
-     * @notice Modifier to make users are not able to perform
-     * market tradings on a certain period.
-     *
-     * @dev `allowTrading` should be set to `true` in order for the users to facilitate the
-     * market trading by themselves.
+    /*** @notice Allowing bidders to withdraw their outbidden ETHs */
+    function withdrawEthRefunds() external nonReentrant {
+        uint256 amount = ethRefundsForBidders[msg.sender];
+        require(amount > 0, "No refundable amount");
+
+        // @note @dev Ensuring that the marketplace has enough ETH balance
+        require(
+            amount <= address(this).balance,
+            "Insufficient contract balance"
+        );
+
+        ethRefundsForBidders[msg.sender] = 0;
+
+        // Safe transfer ETH
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "ETH refund request failed");
+
+        emit RefundWithdrawn(address(0), msg.sender, amount);
+    }
+
+    /*** @notice Allowing bidders to withdraw their outbidden tokens
+     * Tokens to be withdrawn here are only the supported types: MLIFE/USDT/USDC
+     * @param _paymentToken Contract address of the token to be withdrawn
      */
-    modifier isTradingAllowed() {
-        require(allowTrading, "Trading is disabled at this moment");
-        _;
+    function withdrawTokenRefunds(address _paymentToken) external nonReentrant {
+        uint256 amount = tokenRefundsForBidders[msg.sender][_paymentToken];
+        require(amount > 0, "No refundable token");
+        // Ensuring first that the marketplace contract has enough token balance
+        require(
+            IERC20(_paymentToken).balanceOf(address(this)) >= amount,
+            "Insufficient Marketplace's token balance"
+        );
+
+        // Resetting the token refunds mapping
+        tokenRefundsForBidders[msg.sender][_paymentToken] = 0;
+
+        IERC20(_paymentToken).safeTransfer(msg.sender, amount);
+        emit RefundWithdrawn(_paymentToken, msg.sender, amount);
+    }
+
+    /*** @notice Function to allow bidders to withdraw their bid.
+     * @dev This is also a mechanism for bidders
+     * to get their deposited ETH or tokens in the contract. All withdrawn assets (ETH/tokens)
+     * will be placed under ethRefundsForBidders or tokenRefundsForBidders mappings
+     * @param _tokenId NFT's tokenID
+     */
+    function withdrawBid(uint256 _tokenId) external nonReentrant whenNotPaused {
+        Bid memory bid = currentBids[_tokenId];
+        require(bid.bidder == msg.sender, "Not the current bidder");
+
+        _refundBid(listings[_tokenId].paymentToken, bid.bidder, bid.amount);
+
+        delete currentBids[_tokenId];
+        emit BidWithdrawn(_tokenId, msg.sender);
+    }
+
+    /*** @notice Allowing admin to withdraw their ETH earnings */
+    function withdrawAdminEthEarnings() external onlyOwner nonReentrant {
+        uint256 earnings = adminsEthEarnings;
+        require(earnings > 0, "No ETH to withdraw");
+        adminsEthEarnings = 0;
+
+        // Safe ETH transfer
+        (bool success, ) = msg.sender.call{value: earnings}("");
+        require(success, "ETH earnings transfer failed");
+        emit AdminEthWithdrawals(owner(), earnings);
+    }
+    /*** @notice Allowing admin to withdraw their token earnings: MLIFE/USDC/USDT
+     * @param _tokenAddress Contract address of the token to be withdrawn
+     */
+    function withdrawAdminTokenEarnings(
+        address _tokenAddress
+    ) external onlyOwner nonReentrant {
+        uint256 tokenEarnings = adminsTokenEarnings[_tokenAddress];
+        require(tokenEarnings > 0, "No token earnings to withdraw");
+
+        adminsTokenEarnings[_tokenAddress] = 0;
+        IERC20(_tokenAddress).transfer(owner(), tokenEarnings);
+        emit AdminTokenWithdrawals(owner(), _tokenAddress, tokenEarnings);
+    }
+
+    /*** Internal function to handle refunds mapping for both ETH and token payments
+     * @dev This function facilitates the refunds for outbidden users and save them on mappings
+     * depending on the payment type
+     */
+    function _refundBid(
+        address paymentToken,
+        address bidder,
+        uint256 amount
+    ) internal {
+        if (paymentToken == address(0)) {
+            // Refunding the ETH to the outbid user
+            ethRefundsForBidders[bidder] += amount;
+        } else {
+            // Refunding the token to the outbid user
+            tokenRefundsForBidders[bidder][paymentToken] += amount;
+        }
+        emit RefundIssued(bidder, paymentToken, amount);
     }
 }
+
+/// @thanks Built for ManageLife by Koleen Paunon - https://koleenbp.com

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./ManageLife.sol";
 import "./MLInvestorsNFT.sol";
+
+// @note MintInvestorRewards function has been deleted and will be moved to another contract
 
 /**
  * @notice An ERC-20 contract for ManageLife.
@@ -13,7 +15,7 @@ import "./MLInvestorsNFT.sol";
  * This contract manages token rewards issued to ManageLife homeowners and investors.
  * This contract also handles native token functions (EIP20 Token Standard).
  *
- * @author https://managelife.co
+ * @author https://managelife.io
  */
 contract Life is ERC20, Ownable, Pausable {
     /**
@@ -25,6 +27,11 @@ contract Life is ERC20, Ownable, Pausable {
     /// @notice Maximum token supply
     uint256 public constant MAX_SUPPLY = 5000000000000000000000000000;
 
+    /// @notice Initial token supply
+    uint256 public constant initialTokenSupply = 2000000000000000000000000000;
+
+    uint256 public totalMintedTokens = initialTokenSupply;
+
     /// Instance of the MLIFE NFT contract
     ManageLife private _manageLifeToken;
 
@@ -32,12 +39,17 @@ contract Life is ERC20, Ownable, Pausable {
     ManageLifeInvestorsNFT private _investorsNft;
 
     /// Set initial token supply before deploying.
-    constructor() ERC20("ManageLife Token", "MLIFE") {
+    constructor()
+        ERC20("ManageLife Token", "MLIFE")
+        Pausable()
+        Ownable(msg.sender)
+    {
         _mint(msg.sender, 2000000000000000000000000000);
     }
 
     event StakingClaimed(address indexed claimaint, uint256 tokenId);
     event TokensBurned(address indexed burnFrom, uint256 amount);
+    event Supplyminted(address indexed recipient, uint256 amount);
 
     /// @notice Security feature to Pause smart contracts transactions
     function pause() external whenNotPaused onlyOwner {
@@ -72,8 +84,8 @@ contract Life is ERC20, Ownable, Pausable {
     }
 
     /**
-     * @notice Return the MLIFE's contract address.
-     * @dev If set, this will return the MLIFE contract address
+     * @notice Return the MLIFE's NFT contract address.
+     * @dev If set, this will return the MLIFE NFT contract address
      * @return address
      */
     function manageLifeToken() external view returns (address) {
@@ -94,10 +106,11 @@ contract Life is ERC20, Ownable, Pausable {
      *
      * @dev Reverts if the caller is not the MLIFE contract address,
      * MLIFE contact address is not set and if the contract is on-paused status.
+     * Only the MLRE contract can run this function
      *
-     * @param tokenId TokenId of the NFT to start stake.
+     * @param _tokenId TokenId of the NFT to start stake.
      */
-    function initStakingRewards(uint256 tokenId) external whenNotPaused {
+    function initStakingRewards(uint256 _tokenId) external whenNotPaused {
         require(
             address(_manageLifeToken) != address(0),
             "ManageLife token is not set"
@@ -105,9 +118,9 @@ contract Life is ERC20, Ownable, Pausable {
         // Making sure the one who will trigger this function is only the ManageLife NFT contract.
         require(
             msg.sender == address(_manageLifeToken),
-            "Only ManageLife token"
+            "Only ManageLife token address can execute"
         );
-        startOfStakingRewards[tokenId] = uint64(block.timestamp);
+        startOfStakingRewards[_tokenId] = uint64(block.timestamp);
     }
 
     /**
@@ -173,26 +186,9 @@ contract Life is ERC20, Ownable, Pausable {
      * @param _amount Additional amount to be minted.
      */
     function mint(uint256 _amount) external onlyOwner isMaxSupply(_amount) {
+        totalMintedTokens += _amount; // Update the totalMintedTokens variable
         _mint(msg.sender, _amount);
-    }
-
-    /**
-     * @notice Mint $MLIFE token rewards for NFTi Investors.
-     *
-     * @dev MLifeNFTi contract depends on this function to mint $LIFE
-     * token rewards to investors. Newly minted tokens here will be
-     * credited directly to the investor's wallet address and NOT on the admin wallet.
-     * Minting new token supply if 5B LIFE token supply is reached.
-     *
-     * @param investorAddress Wallet address of the investor.
-     * @param _amount Amount to be minted on the investor's address. Amount is based on the
-     * calculated staking rewards from MLifeNFTi contract.
-     */
-    function mintInvestorsRewards(
-        address investorAddress,
-        uint256 _amount
-    ) external isMaxSupply(_amount) {
-        _mint(investorAddress, _amount);
+        emit Supplyminted(msg.sender, _amount);
     }
 
     /**
@@ -208,11 +204,13 @@ contract Life is ERC20, Ownable, Pausable {
      * - A percentage of the token reward will be burned. Percentage will be determined by the ML admin.
      * - Burn call will be handled separately by the frontend app.
      *
-     * @param tokenId MLifeNFT's tokenId.
+     * @param _tokenId MLifeNFT's tokenId.
      */
-    function claimStakingRewards(uint256 tokenId) public whenNotPaused {
+    function claimStakingRewards(
+        uint256 _tokenId
+    ) public onlyMembers(_tokenId) whenNotPaused {
         /*** @notice Variable containers that holds the claimable amounts of the user. */
-        uint256 rewards = claimableStakingRewards(tokenId);
+        uint256 rewards = claimableStakingRewards(_tokenId);
 
         require(
             address(_manageLifeToken) != address(0),
@@ -221,46 +219,40 @@ contract Life is ERC20, Ownable, Pausable {
 
         /// @dev Making sure that admin wallet will not own token rewards.
         require(
-            _manageLifeToken.ownerOf(tokenId) != owner(),
+            _manageLifeToken.ownerOf(_tokenId) != owner(),
             "Platform wallet cannot claim"
-        );
-
-        /// @dev Making sure that only admin and MLifeNFT owners will claim the rewards.
-        require(
-            msg.sender == owner() ||
-                msg.sender == _manageLifeToken.ownerOf(tokenId) ||
-                msg.sender == address(_manageLifeToken),
-            "Unauthorized."
         );
 
         /// @dev Adding require check to comply with the maximum token supply.
         require(totalSupply() + rewards <= MAX_SUPPLY, "$LIFE supply is maxed");
 
         /**
-         * @dev If the answer on the above questions are true,
+         * @dev If the answer on the above questions are true, update the totalMintedTokens and
          * mint new ERC20 $LIFE tokens. Claimable amount will be minted on the property owner.
          * At the same time, a percentage of the claimed reward will be burned
          * which will be handled separately by the frontend app.
          */
-        _mint(_manageLifeToken.ownerOf(tokenId), rewards);
+
+        totalMintedTokens += rewards;
+        _mint(_manageLifeToken.ownerOf(_tokenId), rewards);
 
         /**
          * @dev Resetting the startOfStakingsRewards of the token to make
          * sure their claimable rewards will reset as well.
          */
-        startOfStakingRewards[tokenId] = uint64(block.timestamp);
+        startOfStakingRewards[_tokenId] = uint64(block.timestamp);
         emit StakingClaimed(msg.sender, rewards);
     }
 
     /**
      * @notice Custom access modifier to make sure that the caller of transactions are member of ML.
      * @dev This identifies if the caller is an MLifeNFT or MLifeNFTi holder.
-     * @param tokenId TokenId of the NFT that needs to be checked.
+     * @param _tokenId TokenId of the NFT that needs to be checked.
      */
-    modifier onlyMembers(uint256 tokenId) {
+    modifier onlyMembers(uint256 _tokenId) {
         require(
-            msg.sender == _manageLifeToken.ownerOf(tokenId) ||
-                msg.sender == _investorsNft.ownerOf(tokenId),
+            msg.sender == _manageLifeToken.ownerOf(_tokenId) ||
+                msg.sender == _investorsNft.ownerOf(_tokenId),
             "Only NFT holders can execute this"
         );
         _;

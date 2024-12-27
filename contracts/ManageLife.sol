@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
@@ -8,13 +8,15 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./Life.sol";
 import "./Marketplace.sol";
 
+// @note Initialize the rewards on token transfer from admin to another wallet
+
 /**
  * @notice ManageLife Member NFT (ERC-721) contract for ManageLife Members.
  * An NFT represents a membership or home ownership in real life.
  * Properties are all being managed by ManageLife.
  * NFT Symbol: MLRE
  *
- * @author https://managelife.co
+ * @author https://managelife.io
  */
 contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     Life public lifeToken;
@@ -32,12 +34,22 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         uint256 token,
         uint256 newLifeTokenIssuanceRate
     );
+    event PropertyRetracted(
+        address _currentOwner,
+        address _admin,
+        uint256 _tokenId
+    );
     event BaseURIUpdated(string _newURIAddress);
 
-    constructor() ERC721("ManageLife Member", "MLRE") {}
+    constructor()
+        Ownable(msg.sender)
+        ERC721URIStorage()
+        ERC721Burnable()
+        ERC721("ManageLife Member", "MLRE")
+    {}
 
     /// @notice Public base URI of ML's NFTs
-    string public baseUri = "https://iweb3api.managelifeapi.co/api/v1/nfts/";
+    string public baseUri = "https://api.managelife.io/api/v1/nft/";
 
     function _baseURI() internal view virtual override returns (string memory) {
         return baseUri;
@@ -71,19 +83,25 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         lifeToken = Life(lifeToken_);
     }
 
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(ERC721, ERC721URIStorage) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
     /**
      * @notice Mark an NFT or property fully paid from all mortgages at ML.
      * @dev This can only be executed by the contract deployer or admin wallet.
-     * @param tokenId TokenId of the NFT.
+     * @param _tokenId TokenId of the NFT.
      */
-    function markFullyPaid(uint256 tokenId) external onlyOwner {
-        fullyPaid[tokenId] = true;
+    function markFullyPaid(uint256 _tokenId) external onlyOwner {
+        fullyPaid[_tokenId] = true;
 
         /// @notice Staking for this property will be initialized if this is not owned by admin wallet.
-        if (owner() != ownerOf(tokenId)) {
-            lifeToken.initStakingRewards(tokenId);
+        if (owner() != ownerOf(_tokenId)) {
+            lifeToken.initStakingRewards(_tokenId);
         }
-        emit FullyPaid(tokenId);
+        emit FullyPaid(_tokenId);
     }
 
     /**
@@ -92,53 +110,56 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      * @dev Property ID will be the property number provided by the ML-NFT-API service.
      * Life token issuance rate will be populated by the web3 admin from the portal app.
      *
-     * @param propertyId Property ID of the NFT. This will be provided by the FrontEnd app.
-     * @param lifeTokenIssuanceRate_ Issuance rate percentage that is based on mortgage payments maintained by ML.
+     * @param _propertyId Property ID of the NFT. This will be provided by the web3 admin app.
+     * @param _lifeTokenIssuanceRate Issuance rate percentage that is based on mortgage payments maintained by ML.
      */
     function mint(
-        uint256 propertyId,
-        uint256 lifeTokenIssuanceRate_
+        uint256 _propertyId,
+        uint256 _lifeTokenIssuanceRate
     ) external onlyOwner {
+        uint256 tokenId = _propertyId;
         require(address(lifeToken) != address(0), "Life token is not set");
-        uint256 tokenId = propertyId;
-        require(!_exists(tokenId), "Error: TokenId already minted");
-        _mint(owner(), propertyId);
-        lifeTokenIssuanceRate[tokenId] = lifeTokenIssuanceRate_;
+        lifeTokenIssuanceRate[tokenId] = _lifeTokenIssuanceRate;
+        lifeToken.initStakingRewards(_propertyId);
+        _mint(owner(), tokenId);
     }
 
     /**
      * @notice Burn an NFT. Typical use case is remove an property from ML's custody.
      * @dev Can only be executed by the admin/deployer wallet.
-     * @param tokenId TokenId of the NFT to be burned.
+     * @param _tokenId TokenId of the NFT to be burned.
      */
-    function burn(uint256 tokenId) public override onlyOwner {
-        _burn(tokenId);
+    function burn(uint256 _tokenId) public override(ERC721Burnable) onlyOwner {
+        super.burn(_tokenId);
     }
 
     /**
      * @notice Admin wallet to retract a property (NFT) from a customer.
      * @dev Use case is the admin wallet needs to force claim an NFT from a customer.
-     * @param tokenId TokenId of the property that needs to be retracted.
+     * @param _tokenId TokenId of the property that needs to be retracted.
      */
-    function retract(uint256 tokenId) external onlyOwner {
-        _safeTransfer(ownerOf(tokenId), owner(), tokenId, "");
+    function retract(uint256 _tokenId) external onlyOwner {
+        address currentOwner = ownerOf(_tokenId);
+        require(currentOwner != address(0), "Token not owned by current owner");
+        _safeTransfer(currentOwner, owner(), _tokenId, "");
+        emit PropertyRetracted(currentOwner, owner(), _tokenId);
     }
 
     /**
      * @notice Homeowners or NFT holders to return a property to ML wallet.
      * @dev This will fail if the caller is not the owner of the NFT.
-     * @param tokenId TokenId of the NFT to be returned.
+     * @param _tokenId TokenId of the NFT to be returned.
      */
-    function returnProperty(uint256 tokenId) external {
-        require(msg.sender == ownerOf(tokenId), "Caller is not the owner");
-        safeTransferFrom(msg.sender, owner(), tokenId, "");
+    function returnProperty(uint256 _tokenId) external {
+        require(msg.sender == ownerOf(_tokenId), "Caller is not the owner");
+        safeTransferFrom(msg.sender, owner(), _tokenId, "");
     }
 
     /**
      * @notice Allow homeowners/NFT holders to approve a 3rd party account
      * to perform transactions on their behalf.
      *
-     * @dev This works like setApprovalForAll. The owner is giving ownership wo their NFT.
+     * @dev This works like setApprovalForAll. The owner is giving ownership of their NFT.
      * Use case of this is an ML customer who would like to give an access to anyone to
      * use the home/property.
      * Requirements in order to make sure this call will succeed:
@@ -149,26 +170,29 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
      * @param to Wallet address who will be granted with the above permission.
      * @param tokenId TokenId of the NFT.
      */
-    function approve(address to, uint256 tokenId) public override {
+    function approve(
+        address to,
+        uint256 tokenId
+    ) public virtual override(ERC721, IERC721) {
         require(
             fullyPaid[tokenId] ||
                 ownerOf(tokenId) == owner() ||
                 to == address(marketplace),
             "Approval restricted"
         );
-        super.approve(to, tokenId);
+        ERC721.approve(to, tokenId);
     }
 
     /**
      * @notice Transfer hooks. The functions inside will be executed as soon as the
-     * concerned NFT is being trasnferred.
+     * concerned NFT is being transferred.
      *
      * @dev Operations inside this hook will be accomplished
      * if either of the checks below were accomplished:
      * - Customers cannot be able to transfer their NFTs if they are not yet fully paid.
      * - Sender is the contract owner.
      * - Receiver is the contract owner.
-     * - Caller of thid function is the Marketplace contract address.
+     * - Caller of this function is the Marketplace contract address.
      *
      * @param from Sender of the NFT.
      * @param to Receiver of the NFT.
@@ -178,7 +202,9 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         address from,
         address to,
         uint256 tokenId
-    ) internal override {
+    ) internal {
+        // @note We are preventing nfts that are not full paid yet to be transferred to another address
+        // @note Allowed transfers are only from admin to users and users to admin
         require(
             fullyPaid[tokenId] ||
                 from == owner() ||
@@ -186,27 +212,23 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
                 msg.sender == address(marketplace),
             "Transfers restricted"
         );
-        if (!fullyPaid[tokenId]) {
-            /// @dev If the sender of the NFT is contract owner, staking will be initiated.
-            if (from == owner()) {
-                lifeToken.initStakingRewards(tokenId);
-            }
-            /** @dev If the user will return the NFT to the contract owner,
-             * all the accumulated staking rewards will be claimed first.
-             */
-            if (to == owner() && from != address(0)) {
-                lifeToken.claimStakingRewards(tokenId);
-            }
+
+        // @note Staking will be initialized only if the sender of the nft is the admin wallet and nft is not yet paid fully
+        if (from == owner() && !fullyPaid[tokenId]) {
+            lifeToken.initStakingRewards(tokenId);
+            emit StakingInitialized(tokenId);
         }
-        emit StakingInitialized(tokenId);
 
-        super._beforeTokenTransfer(from, to, tokenId);
-    }
+        // @note If the nft is returned to the admin wallet, generated staking rewards will be released
+        if (to == owner() && from != address(0)) {
+            lifeToken.claimStakingRewards(tokenId);
+        }
 
-    function _burn(
-        uint256 tokenId
-    ) internal override(ERC721, ERC721URIStorage) {
-        super._burn(tokenId);
+        // @note Initialize the staking, if nft is fully paid. We're also allowing users here to transfer
+        // the nft to any address since the nft has been fully paid.
+        if (fullyPaid[tokenId] && from != owner()) {
+            lifeToken.initStakingRewards(tokenId);
+        }
     }
 
     /**
@@ -233,7 +255,6 @@ contract ManageLife is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         lifeToken.claimStakingRewards(tokenId);
         lifeTokenIssuanceRate[tokenId] = newLifeTokenIssuanceRate;
         lifeToken.updateStartOfStaking(tokenId, uint64(block.timestamp));
-
         emit TokenIssuanceRateUpdated(tokenId, newLifeTokenIssuanceRate);
     }
 }

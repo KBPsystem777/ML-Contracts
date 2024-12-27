@@ -12,7 +12,7 @@ import "./Life.sol";
  * Owning this NFT represents a investment in ManageLife's properties in real life.
  * NFT Symbol: MLifeNFTi
  *
- * @author https://managelife.co
+ * @author https://managelife.io
  */
 contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     /// Life token instance
@@ -91,8 +91,8 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
     ) external onlyOwner {
         /// Transfer first the exisiting reward to the NFTi holder before rate update takes place.
         lifeToken.mintInvestorsRewards(
-            ownerOf(tokenId),
-            checkClaimableStakingRewards(tokenId)
+            checkClaimableStakingRewards(tokenId),
+            tokenId
         );
 
         /// Resetting the start of stake to current time to halt the reward accumulation in the meantime.
@@ -176,7 +176,7 @@ contract ManageLifeInvestorsNFT is ERC721A, Ownable {
         uint256 rewards = checkClaimableStakingRewards(tokenId);
 
         /// Mint the claimable $LIFE reward to the investor address.
-        lifeToken.mintInvestorsRewards(msg.sender, rewards);
+        lifeToken.mintInvestorsRewards(rewards, tokenId);
 
         /// @notice Record new timestamp data to reset the staking rewards data
         startOfStaking[tokenId] = uint256(block.timestamp);

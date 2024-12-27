@@ -5,7 +5,7 @@ require("solidity-docgen")
 require("dotenv").config()
 
 module.exports = {
-  solidity: "0.8.17",
+  solidity: "0.8.24",
   docgen: {
     outputDir: "./",
   },
@@ -34,12 +34,20 @@ module.exports = {
       url: process.env.REACT_APP_SEPOLIA_URL,
       accounts: [process.env.REACT_APP_PRIVATE_KEY],
     },
+    holesky: {
+      url: process.env.REACT_APP_HOLESKY_URL,
+      accounts: [process.env.REACT_APP_PRIVATE_KEY],
+    },
     mainnet: {
       url: process.env.REACT_APP_ETH_URL,
       accounts: [process.env.REACT_APP_PRIVATE_KEY],
     },
     polygon: {
       url: process.env.REACT_APP_POLYGON_URL,
+      accounts: [process.env.REACT_APP_PRIVATE_KEY],
+    },
+    baseSepolia: {
+      url: process.env.REACT_APP_BASE_SEPOLIA_URL,
       accounts: [process.env.REACT_APP_PRIVATE_KEY],
     },
   },
